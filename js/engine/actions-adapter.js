@@ -8,7 +8,7 @@ function actionInfusion(kind,view){
 function actionDivine(view){var w=view.weapon||{},o=view.twoHanded?{}:view.off||{};return 1+((w.cursed?0:w.divine||0)+(o.cursed?0:o.divine||0))*gearPassiveBonus();}
 function actionCritBonus(view){return actionInfusion('holy',view)==='shadow'&&isBuffed()?enchantValues('holy','shadow').critChance:0;}
 function actionRootCrit(target,view){return actionInfusion('orb',view)==='earth'&&effectHasTag(target,'root')?enchantValues('orb','earth').critChance:0;}
-function actionCritMultiplier(view){return 1.6+(actionInfusion('orb',view)==='shadow'?enchantValues('orb','shadow').critMultiplier:0);}
+function actionCritMultiplier(view){return FoteActions.criticalMultiplier(view.stats.agi,actionInfusion('orb',view)==='shadow'?enchantValues('orb','shadow').critMultiplier:0);}
 function attackView(att,def,options){
   if(att!==player)return att;
   var selected=options.weapon;
@@ -22,6 +22,7 @@ function attackView(att,def,options){
   return Object.assign({},player,{weapon:selected,dmg:stats.dmg,acc:stats.acc,crit:stats.crit});
 }
 function resistMult(target,type){
+  if(target.shadowClone&&target.cloneStats&&typeof FoteShadowClone!=='undefined')return FoteShadowClone.resistance(target,type);
   var own=target===player,b=target.base||{},B=target.buffs||{},arm=own?bodyArmor(player):{},immunity=false;
   if(own)for(var el in IMMUNE_TYPE)if(IMMUNE_TYPE[el]===type&&aff(el)>=6)immunity=true;
   return FoteActions.resistance(type,{player:own,
@@ -33,10 +34,11 @@ function resistMult(target,type){
     element:b.el?elemToType(b.el):null,opposite:b.el?elemToType(OPPOSITE[b.el]):null,undead:b.undead||b.shadowy,
     wet:!!isWet(target),chilled:!!(target.st&&target.st.chill),warding:own?ringVal('warding'):0,immune:immunity,
     poisonward:B.poisonward>0,shadeward:B.shadeward>0,stormward:B.stormward>0,fireward:B.fireward>0,starward:B.starward>0,
-    mountainResistance:own?.02*livingMountainStacks(player):0,sanctuary:inSanctuary(target),divine:divineStrength()});
+    sanctuary:inSanctuary(target),divine:divineStrength()});
 }
 function prepareAttack(event){
   var att=event.source,def=event.target,view=event.view=attackView(att,def,event.options);
+  revealActor(att);
   if(att===player&&view.weapon&&view.weapon.unarmed&&!event.options.offhand&&!event.tags.has('proc')&&livingMountain(player)){
     stackLivingMountain();view=event.view=attackView(att,def,event.options);
   }
@@ -146,12 +148,17 @@ function rollWeaponHit(event){
   else { lungeFx(att, def.x, def.y); if(att===player || !att.base.sfx)sfx('swing',{at:tSwing}); }
   if(!ranged && att!==player && att.base.sfx) sfx(att.base.sfx+'-attack',{at:tSwing});
   if(def===player && att.foe) ch=hostileHitChance(ch);
+  if(def.shadowClone&&def.cloneStats){
+    var echoDefense=def.cloneStats;
+    if(ranged&&rng()<echoDefense.deflect||dist(att,def)<=1&&rng()<echoDefense.parry){floatText(def.x,def.y,'deflected','miss');return;}
+    ch-=echoDefense.luck||0;if(echoDefense.blur)ch=Math.max(.15,ch*.8);
+  }
   if(def===player && player.parry && dist(att,def)<=1 && combatRoll(player.parry,true)){
     log('You parry '+att.name+'.','c-good'); sfx('parry'); floatText(def.x,def.y,'parry','miss');
     if(att.hp>0){ log('Riposte!','c-good'); attack(player, att, 0.5, 'Riposte'); }
     return;
   }
-  var blocked = (def===player && player.block && combatRoll(player.block,true));
+  var blocked = def.shadowClone&&def.cloneStats?rng()<def.cloneStats.block:(def===player && player.block && combatRoll(player.block,true));
   if(att===player ? !combatRoll(ch,true) : def===player ? combatRoll(1-ch,true) : rng()>ch){
     log(who+' miss'+(att===player?'':'es')+' '+foe+' <span class="roll">('+Math.round(ch*100)+'% to hit)</span>','c-miss');
     floatText(def.x, def.y, 'miss', 'miss'); sfx('miss'); if(att===player && def.state!=='hunt' && def.state!=='throne') def.state='hunt'; if(att===player) def.caughtOff=-1; return;
@@ -195,7 +202,7 @@ function rollWeaponDamage(event,strike){
       /* 2026-09-22 (Justin): no piety for surprise attacks at all - his followers simply cannot sneak (stealthScore), and
          his only foul is Shadow (gods.js, forge.js). */ }
   } else {
-    crit = !(def===player && hasP('bulwark')) && rng() < 0.05;
+    crit = !(def===player && hasP('bulwark')||def.shadowClone&&def.cloneStats.passives.bulwark) && rng() < 0.05;
   }
   if(crit){base *= att===player?actionCritMultiplier(view):1.6;}
   if(att===player&&pummelHit&&def.hp>0)applyStatus(def,'stun',1);
@@ -243,12 +250,20 @@ function resolveWeaponDamage(event,strike){
          sanctifies the ground it strikes now, so the capstone answers a swing as well as a spell. */
       if(typeof holyG!=='undefined' && holyG && typeof aff==='function' && aff('light')>=6 && inb(def.x,def.y))
         holyG[idxOf(def.x,def.y)]=3;
-      note+=' <span style="color:#FFF1B8">smite '+sm+'</span>';
+      // The weapon may have killed it already. Do not present a skipped proc as 0 damage.
+      if(sm>0)note+=' <span style="color:#FFF1B8">smite '+sm+'</span>';
       if(rng()<0.10*player.aff.light) applyStatus(def,'blind',2); sparkleFx(def.x,def.y,'light',10);
     }
     if(player.aff.shadow && def.hp>0) addHollow(def, 0);
     if(view.weapon.unarmed && hasGod('grom') && def.hp>0 && rng() < (buff('ironbody')?0.3*actionDivine(view):0) + (godRank()>=3?0.15:0)){ applyStatus(def,'stun',1); note+=' staggered'; }
     if(extra>0)dealDirectDamage(def,Math.round(extra*(el?resistMult(def,el):1)),el||'phys',player,{tags:['proc','enchant'],actionId:event.actionId,resistanceApplied:!!el});
+    if(player.buffs&&player.buffs.moltenring>0&&def.hp>0){
+      // This is its own fire packet, so another weapon enchant cannot change
+      // its element. The shared pipeline owns resistance and shield absorption.
+      var molten=applyDamage(def,5,'fire',player,{attackRolled:true,actionId:event.actionId,tags:['proc','molten-ring']});
+      applied+=molten;
+      if(molten>0){el=el||'fire';note+=' <span class="c-fire">molten ring '+molten+'</span>';}
+    }
   }
   if(att!==player && att.base && att.base.el){
     el = att.base.el;

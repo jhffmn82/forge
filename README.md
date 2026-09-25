@@ -1,9 +1,9 @@
-# Forge of the Elements — Beta 1.1
+# Forge of the Elements — Beta 1.2
 
 [Play in your browser](https://jhffmn82.github.io/forge/).
 
-Explore elemental dungeons, shape your build at the Forge, and face each biome's boss. Keyboard, mouse and touch controls are supported. Use your browser's installation controls for an installed app.
+Explore elemental dungeons, shape your build at the Forge, and face each biome's boss. Beta 1.2 opens the Realm of Chaos and the Unmaker encounter, ending at the Forge of the Elements. Keyboard, mouse and touch controls are supported. Use your browser's installation controls for an installed app.
 
-[Beta 1.1 patch notes](PATCH-NOTES.md). The in-game Version button also lists changes and checks for updates.
+[Beta 1.2 patch notes](PATCH-NOTES.md). The in-game Version button also lists changes and checks for updates.
 
-Generated from source commit `625a945c423accb19b7dce227317ec1a7f879a9c`. Built 2026-09-25 01:10:20 UTC.
+Generated from source commit `cca312a0c8637ce28c2a15ac966993b1edb74e73`. Built 2026-09-25 16:25:24 UTC.

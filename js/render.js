@@ -428,7 +428,7 @@ function castSheet(look){
   }
   return null;
 }
-function mobSheet(name){ var m=AS.mobs && AS.mobs[name]; if(!m) return null; var img=atl('mob-'+name+'.png'); return img ? {img:img, m:m} : null; }
+function mobSheet(name){ var preview=typeof FoteChaosEnemyArt!=='undefined'&&FoteChaosEnemyArt.sheet(name);if(preview)return preview;var m=AS.mobs && AS.mobs[name]; if(!m) return null; var img=atl('mob-'+name+'.png'); return img ? {img:img, m:m} : null; }
 /* Share artwork without granting temporary swarms the raised-shade gameplay tag. */
 function isShadeSummon(e){return !!(e && e.ally && (e.shade || e.swarm));}
 var SHADE_SUMMON_ART=null;
@@ -443,6 +443,7 @@ function shadeSummonSheet(){
 }
 function clipFrame(sheet, e, sliding){
   var m=sheet.m, now=performance.now(), cell=m.cell;
+  if(m.chaos&&ANIM.reduce)return {sx:0,sy:m.static_row*cell};
   /* 2026-09-23 (Justin: the Magma Crawler changed art between asleep and awake): a creature whose animation rows
      drifted off its still (packet 04's fire and water five, stillPose in planesfwa.js) holds the still in every
      state, mid-clip included, until it is re-animated on model. */
@@ -460,6 +461,9 @@ function clipFrame(sheet, e, sliding){
   /* 2026-09-19: Justin - a sleeping creature kept playing its idle (the Myconid swayed about with a Z over it).
      Asleep it holds its still pose until something wakes it. */
   if(e.state==='asleep'){ var sr=m.static_row!==undefined ? m.static_row : (m.clips.idle?m.clips.idle.row:0); return {sx:0, sy:sr*cell}; }
+  /* The Myconid's supplied idle row changes foot positions like a run. Its
+     planted pose breathes below; attack and hurt clips still take precedence. */
+  if(e.base && e.base.sprite==='m-myconid' && !sliding && m.static_row!==undefined)return {sx:0,sy:m.static_row*cell};
   if(sliding && m.clips.walk){ var w=m.clips.walk; return {sx:(Math.floor(now/CLIP_MS.walk)%w.frames)*cell, sy:w.row*cell}; }
   if(m.clips.idle){ var id=m.clips.idle, ph=((e.id||0)*97)%500; return {sx:(Math.floor((now+ph)/CLIP_MS.idle)%id.frames)*cell, sy:id.row*cell}; }
   return {sx:0, sy:(m.static_row||0)*cell};
@@ -467,15 +471,16 @@ function clipFrame(sheet, e, sliding){
 function drawCharacterSprite(e, px, py, opts){
   if(e.livingFlame)return drawLivingFlame(e,px,py,opts);
   opts=opts||{};
-  if(e===player){
-    var cs = spriteOn ? castSheet(playerCastLook()) : null;
+  if(e===player||e.shadowClone){
+    var cs = spriteOn ? castSheet(e.shadowClone?e.cloneLook:playerCastLook()) : null;
     if(cs){
       var fr=clipFrame(cs, e, opts.sliding), m=cs.m, cell=m.cell, sc=(TS*1.08)/m.stand;
       var w=cell*sc, h=cell*sc, dx=px+TS/2-w/2, dy=py+TS-(cell-m.foot)*sc;
       var rect=placementRect(dx,dy,w,h);dx=rect.x;dy=rect.y;w=rect.w;h=rect.h;
-      ctx.save(); ctx.globalAlpha=opts.alpha===undefined?1:opts.alpha; ctx.imageSmoothingEnabled=true;
+      ctx.save(); ctx.globalAlpha=(opts.alpha===undefined?1:opts.alpha)*(e.shadowClone?.58:1); ctx.imageSmoothingEnabled=true;
+      if(e.shadowClone)ctx.filter='grayscale(1) brightness(.42) sepia(.6) hue-rotate(205deg) saturate(1.5)';
       if(opts.flip){ ctx.translate(px+TS/2,0); ctx.scale(-1,1); ctx.translate(-(px+TS/2),0); }
-      if(typeof drawCastLayers==='function') drawCastLayers(player, cs, fr, dx, dy, w, h); else ctx.drawImage(cs.img, fr.sx, fr.sy, cell, cell, dx, dy, w, h);
+      if(typeof drawCastLayers==='function') drawCastLayers(e, cs, fr, dx, dy, w, h); else ctx.drawImage(cs.img, fr.sx, fr.sy, cell, cell, dx, dy, w, h);
       if(opts.flash>0){ ctx.globalAlpha*=opts.flash; ctx.drawImage(whiteCut(cs.img,fr.sx,fr.sy,cell,cell), dx,dy,w,h); }
       ctx.restore();
       return true;
@@ -485,13 +490,13 @@ function drawCharacterSprite(e, px, py, opts){
   var isShade=isShadeSummon(e),visualBase=isShade?{art:.9}:e.base;
   var ms = spriteOn ? (isShade?shadeSummonSheet():mobSheet(e.base.sprite)) : null;
   if(ms){
-    var f2=clipFrame(ms, e, false), mm=ms.m, c2=mm.cell, box=mm.box||[0,0,c2,c2];
+    var f2=clipFrame(ms, e, !!opts.sliding), mm=ms.m, c2=mm.cell, box=mm.box||[0,0,c2,c2];
     var target=TS*(visualBase.art||0.9)*(e.big&&!isShade?1.25:1), s2=target/Math.max(box[3], box[2]*0.8);
     var w2=c2*s2, h2=c2*s2, feet=(box[1]+box[3]);
     var dx2=px+TS/2-(box[0]+box[2]/2)*s2, dy2=py+TS*0.97-feet*s2;
     /* Tier-two reference art has a single pose: give it a restrained breath,
        attack compression and recoil without altering simulation state. */
-    if((visualBase.elementTier || visualBase.stillPose) && !ANIM.reduce && e.state!=='asleep'){
+    if((visualBase.elementTier || visualBase.stillPose || visualBase.sprite==='m-myconid') && !ANIM.reduce && e.state!=='asleep'){
       var msNow=performance.now(), age2=e._clip?msNow-e._clip.t0:9999;
       var action2=e._clip&&e._clip.name==='attack'&&age2>=0&&age2<540?Math.sin(age2/540*Math.PI):0;
       var pulse2=Math.sin(msNow/330+(e.id||0))*.012;
@@ -634,8 +639,11 @@ function gatherBaseLights(now, prp){
 
 /* ---- telegraphs: the floor a boss is about to hit glows red, brighter as the blow gets close ---- */
 function drawBossTelegraphs(now){
+  if(typeof FoteUnmakerEncounter!=='undefined')FoteUnmakerEncounter.drawTelegraphs(now);
   ents.forEach(function(e){
     if(!e.windup || !e.windup.tiles) return;
+    if(e.windup.unmaker)return;
+    if(e.windup.chaos&&typeof FoteChaosEnemyArt!=='undefined')return;
     var urgent = e.windup.due<=1, pulse = ANIM.reduce ? 0.7 : 0.5+0.5*Math.sin(now/(urgent?110:220));
     ctx.save();
     e.windup.tiles.forEach(function(t){
@@ -653,6 +661,7 @@ function drawBossTelegraphs(now){
 /* ---- beacons: key interactables glow and shed sparks so they read at a glance, even from memory ---- */
 var BEACON_PROPS = {'fountain':'#7FC8FF', 'altar-spikes':'#B8453A', 'elemental-lock':'#C9A8FF', 'lever-up':'#E8D27A', 'lever-down':'#E8D27A', 'tablet':'#F6E7B0', 'cage':'#E8B44A', 'boss-throne':'#E2622B'};
 function beaconAt(x, y){
+  if(typeof FoteChaosCampaign!=='undefined'&&FoteChaosCampaign.currentInfo(x,y))return null;
   var t=at(x,y);
   if(t===STAIRS) return {col:'#9FD8FF', big:1};
   if(t===EXIT) return floorMeta.exitOpen ? {col:'#9FD8FF', big:1} : null;
@@ -766,7 +775,7 @@ function drawScene(){
     }
     /* shadow cast by a wall face onto the floor below it */
     /* (not under the organic rock of the Caverns and the planes, where a tile-wide band showed as square blocks) */
-    if(!isWallLike(t) && isWallLike(at(x,y-1)) && t!==CHASM && !(typeof ptMat==='function' && ptMat())){
+    if(!isWallLike(t) && isWallLike(at(x,y-1)) && t!==CHASM && !(typeof ptMat==='function' && ptMat(x,y))){
       ctx.globalAlpha=0.55*a; var sg=ctx.createLinearGradient(0,py,0,py+TS*0.35); sg.addColorStop(0,'rgba(0,0,0,0.7)'); sg.addColorStop(1,'rgba(0,0,0,0)');
       ctx.fillStyle=sg; ctx.fillRect(px,py,TS,TS*0.35);
     }
@@ -795,6 +804,7 @@ function drawScene(){
 
   /* ---- surface decoration: moss, grit, drains (surface.js) ---- */
   if(artOK && typeof drawSurfaceDeco==='function') drawSurfaceDeco();
+  if(typeof FoteChaosPreviewRenderer!=='undefined'&&FoteChaosPreviewRenderer.active())FoteChaosPreviewRenderer.drawVoid(now);
   ctx.globalAlpha=1;
 
   /* ---- ground decals ---- */
@@ -818,10 +828,16 @@ function drawScene(){
   var upright=[];
   function standing(row,paint){upright.push({row:row,paint:paint,order:upright.length});}
   /* ---- tile objects ---- */
-  function paintTileObject(x,y){
+  function paintTileObject(x,y,scoped){
+    if(!scoped&&typeof FoteChaosPreviewRenderer!=='undefined'&&FoteChaosPreviewRenderer.mixed())return FoteChaosPreviewRenderer.withCell(x,y,function(){return paintTileObject(x,y,true);});
     if(!inb(x,y)) return; var oi=idxOf(x,y); if(!(revealAll||seen[oi])) return;
     var ot=map[oi]; if(ot===FLOOR||ot===WALL||ot===WATER||ot===CHASM||ot===SECRET) return;
+    // Multi-tile preview gateways are painted once by the ordinary set renderer.
+    if(ot===PORTAL&&floorMeta&&floorMeta.chaosPreview){var gateway=propAt(x,y);if(gateway&&gateway.previewPortal)return;}
     var oa=(revealAll||vis[oi])?1:memA(0.45), opx=(x-camX)*TS, opy=(y-camY)*TS, spr=spriteOn?tileSprite(x,y,ot):null;
+    if(typeof FoteChaosCurrentRenderer!=='undefined'&&FoteChaosCurrentRenderer.drawGate(x,y,opx,opy,oa))return;
+    if(typeof FoteChaosCampaign!=='undefined'&&FoteChaosCampaign.currentInfo(x,y))return;
+    if(typeof FoteUnmakerPreview!=='undefined'&&FoteUnmakerPreview.drawGate(x,y,opx,opy,oa))return;
     if(ot===CHEST && typeof propShadow==='function') propShadow(x, y, opx, opy, oa, 'chest');
     if(typeof drawSideDoor==='function' && drawSideDoor(x, y, ot, opx, opy, oa)) return;   /* doors in east/west walls (surface.js) */
     if(ot===OPEN){ drawOpenDoor(x, y, opx, opy, oa); return; }
@@ -857,10 +873,12 @@ function drawScene(){
   });
   drawTelegraphs(now);   /* boss attack markings sit on the floor, under whoever stands there */
   /* props */
-  function paintProp(p){
+  function paintProp(p,scoped){
+    if(!scoped&&typeof FoteChaosPreviewRenderer!=='undefined'&&FoteChaosPreviewRenderer.mixed())return FoteChaosPreviewRenderer.withCell(p.x,p.y,function(){return paintProp(p,true);});
     if(!(revealAll||seen[idxOf(p.x,p.y)])) return;
     var ppx=(p.x-camX)*TS, ppy=(p.y-camY)*TS, pa=(revealAll||vis[idxOf(p.x,p.y)])?1:memA(0.45);
-    var o=spriteOn ? objArt('props',p.name)||objArt('structures',p.name)||objArt('chests',p.name)||objArt('terrain',p.name) : null;   /* an opened chest's art lives with the chests */
+    var artName=p.artName||p.name;
+    var o=spriteOn ? objArt('props',artName)||objArt('structures',artName)||objArt('chests',artName)||objArt('terrain',artName) : null;   /* an opened chest's art lives with the chests */
     if(p.name==='elemental-lock' && p.opened) pa*=0.6;
     if(p.name==='vines'){ drawVines(p.x, p.y, ppx, ppy, pa, now); return; }
     if(p.pillar){ drawPillar(p, ppx, ppy, pa, now); return; }
@@ -877,6 +895,8 @@ function drawScene(){
     if(p.flat || p.name==='vines')paintProp(p);
     else standing(p.y+(p.h||1),function(){paintProp(p);});
   });
+  // The walkable spore pool and other flat scenery must not cover combat tiles.
+  if(typeof FoteChaosEnemyArt!=='undefined')FoteChaosEnemyArt.drawHazards(now);
 
   /* items: after the flat props, so a pickup dropped on rubble, bones or moss lies on top of them rather than
      under them (2026-09-22, Justin: a mana globe under a rock); standing props and creatures are deferred and
@@ -914,7 +934,7 @@ function drawScene(){
   }
 
   /* ---- entities, back to front ---- */
-  var list=ents.filter(function(e){ return e!==player && (revealAll||vis[idxOf(e.x,e.y)]||(e.foe && player && player.dawnUntil>turn)); }).sort(function(a,b){ return a.y-b.y; });
+  var list=ents.filter(function(e){ return e!==player && actorVisible(e,true); }).sort(function(a,b){ return a.y-b.y; });
   function drawPlayer(){
     var poff=entOffset(player);
     atTile(prp.x,prp.y,function(px0,py0){
@@ -942,11 +962,12 @@ function drawScene(){
       ctx.globalAlpha=0.35; ctx.fillStyle='#000'; ctx.beginPath(); ctx.ellipse(px0+TS/2,py0+TS*0.9,TS*0.26*(e.base.art||0.9),TS*0.09,0,0,7); ctx.fill(); ctx.globalAlpha=1;
       var flip = e.ally && typeof e.facingLeft==='boolean' ? e.facingLeft : player.x < e.x;
       if(e.base && e.base.artLeft) flip = !flip;   /* art painted facing left (goblin) */
-      if(!drawCharacter(e, px, py, {flip:flip, flash:flashOf(e), breath:breathOf(e), outline:e.foe && !!vis[idxOf(e.x,e.y)]})){
+      if(!drawCharacter(e, px, py, {flip:flip, flash:flashOf(e), breath:breathOf(e), sliding:motionActive(e,now), outline:e.foe && !!vis[idxOf(e.x,e.y)]})){
         var bb=breathOf(e)*TS*0.6;
         ctx.fillStyle=e.col; roundRect(px+TS*0.14,py+TS*0.1-bb,TS*0.72,TS*0.72+bb,TS*0.16); ctx.fill(); glyph(e.ch,px,py,'#120F0D');
       }
       if(e.st&&e.st.burn)drawBurningFlame(px+TS*.5,py+TS*.88,TS*.56,now,e.id||0,.44);
+      if(typeof FoteChaosEnemyArt!=='undefined')FoteChaosEnemyArt.drawActorCues(e,px0,py0,now);
       if(e.ally){ ctx.strokeStyle='#7FD08A'; ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(px0+TS/2,py0+TS*0.9,TS*0.34,TS*0.12,0,0,7); ctx.stroke(); ctx.lineWidth=1; }
       /* health bar only once hurt, or always for bosses */
       /* 2026-09-19: a boss has the bar across the top of the screen (ui.js bossBar) - no second one over its head */
@@ -999,6 +1020,7 @@ function drawScene(){
 
   if(lightingOn()) drawLightmap(now, prp);
   drawLights();
+  if(typeof FoteChaosCurrentRenderer!=='undefined')FoteChaosCurrentRenderer.drawAll(now);
   drawBeacons(now);
 
   /* ---- aiming ---- */
@@ -1011,7 +1033,7 @@ function drawScene(){
     }
     if(hoverX>=0){
       var ok=inRange(hoverX,hoverY);
-      var onFoe=ents.some(function(e){ return e.foe && e.x===hoverX && e.y===hoverY; });
+      var onFoe=ents.some(function(e){return e.foe&&!actorConcealed(e)&&entityOccupies(e,hoverX,hoverY);});
       if(A.kind==='summon' && ok && (!walkable(hoverX,hoverY) || occupied(hoverX,hoverY))) ok=false;
       var col = !ok ? '#B8453A' : (onFoe || A.kind==='dash' || A.kind==='summon' ? '#E8B44A' : '#8A7F74');
       atTile(hoverX,hoverY,function(px,py){

@@ -3,20 +3,35 @@
 function canSeePlayer(e){
   if(player.hidden>0)return false;
   if(e&&e.base&&e.base.darksight&&DEEP_RAWVIS)return !!DEEP_RAWVIS[idxOf(e.x,e.y)];
-  return !!vis[idxOf(e.x,e.y)];
+  for(var y=e.y;y<e.y+entitySize(e);y++)for(var x=e.x;x<e.x+entitySize(e);x++)if(inb(x,y)&&vis[idxOf(x,y)])return true;
+  return false;
 }
 function canActorMove(e){
   var base=e&&e.base||{};
+  if(typeof FoteChaosEnemies!=='undefined'&&FoteChaosEnemies.holdsPosition(e))return false;
   return FoteActors.movementAllowed(e,gameEffects)&&!base.still&&!base.object&&!e.parent&&e.kind!=='mawlimb';
 }
-function actorCellAllowed(e,x,y,dx,dy,options){
+function actorFootprintAllowed(e,x,y,options){
   options=options||{};
-  if(!inb(x,y)||occupied(x,y))return false;
-  var tile=at(x,y);
-  if(!(walkable(x,y)||(options.doors&&tile===DOOR))||tile===CHASM||deepLava(x,y))return false;
-  if(e.base.aquatic&&!eelWater(x,y))return false;
-  if(options.avoidFire&&fireT[idxOf(x,y)]>0&&e.base.el!=='fire')return false;
-  if(dx&&dy&&!walkable(e.x+dx,e.y)&&!walkable(e.x,e.y+dy))return false;
+  var n=entitySize(e);
+  for(var yy=y;yy<y+n;yy++)for(var xx=x;xx<x+n;xx++){
+    if(!inb(xx,yy)||!options.terrainOnly&&occupied(xx,yy,e))return false;
+    if(typeof FoteChaosEnemies!=='undefined'&&!FoteChaosEnemies.cellAllowed(e,xx,yy))return false;
+    var crucibleGate=typeof FoteUnmakerPreview!=='undefined'&&FoteUnmakerPreview.gateAt(xx,yy);
+    if(crucibleGate&&!crucibleGate.open)return false;
+    var tile=at(xx,yy);
+    if(!(walkable(xx,yy)||(n===1&&options.doors&&tile===DOOR))||tile===CHASM||deepLava(xx,yy))return false;
+    if(e.base.aquatic&&!eelWater(xx,yy))return false;
+    if(options.avoidFire&&fireT[idxOf(xx,yy)]>0&&e.base.el!=='fire')return false;
+  }
+  return true;
+}
+function actorCellAllowed(e,x,y,dx,dy,options){
+  if(!actorFootprintAllowed(e,x,y,options))return false;
+  if(dx&&dy){
+    if(entitySize(e)===1){if(!walkable(e.x+dx,e.y)&&!walkable(e.x,e.y+dy))return false;}
+    else if(!actorFootprintAllowed(e,e.x+dx,e.y,options)&&!actorFootprintAllowed(e,e.x,e.y+dy,options))return false;
+  }
   return true;
 }
 function stepEnt(e,dx,dy){
@@ -36,18 +51,45 @@ function stepEnt(e,dx,dy){
   }
   return false;
 }
+function actorFootprintField(e,target,options){
+  var field=new Int32Array(MW*MH).fill(-1),queue=[],n=entitySize(e);
+  options=Object.assign({terrainOnly:true,doors:true},options||{});
+  for(var y=target.y-n;y<=target.y+entitySize(target);y++)for(var x=target.x-n;x<=target.x+entitySize(target);x++){
+    if(!inb(x,y)||dist({x:x,y:y,base:e.base},target)!==1||!actorFootprintAllowed(e,x,y,options))continue;
+    field[idxOf(x,y)]=0;queue.push({x:x,y:y});
+  }
+  for(var head=0;head<queue.length;head++){
+    var p=queue[head];
+    // A per-actor route only needs the gradient back to this actor. The shared
+    // player field has no origin coordinates and still covers the whole floor.
+    if(p.x===e.x&&p.y===e.y)break;
+    FoteActors.neighbors.forEach(function(offset){
+      var x=p.x+offset[0],y=p.y+offset[1];
+      if(!inb(x,y)||field[idxOf(x,y)]>=0||!actorFootprintAllowed(e,x,y,options))return;
+      if(offset[0]&&offset[1]&&!actorFootprintAllowed(e,x,p.y,options)&&!actorFootprintAllowed(e,p.x,y,options))return;
+      field[idxOf(x,y)]=field[idxOf(p.x,p.y)]+1;queue.push({x:x,y:y});
+    });
+  }
+  return field;
+}
 function actorPathStep(e,target,field){
   if(!canActorMove(e))return false;
-  field=field||bfsFrom(target.x,target.y);
-  var step=FoteActors.bestStep(e,function(x,y){return inb(x,y)?field[idxOf(x,y)]:-1;},function(x,y,dx,dy){return actorCellAllowed(e,x,y,dx,dy,{doors:true,avoidFire:true});});
+  field=entitySize(e)>1||e.base.aquatic?actorFootprintField(e,target):(field||actorFootprintField(e,target));
+  function select(){return FoteActors.bestStep(e,function(x,y){return inb(x,y)?field[idxOf(x,y)]:-1;},function(x,y,dx,dy){return actorCellAllowed(e,x,y,dx,dy,{doors:true,avoidFire:true});});}
+  var step=select();
+  if(!step&&dist(e,target)>1){
+    // The shared field ignores bodies. If its next step is occupied, route around
+    // the obstruction instead of repeatedly walking straight into it.
+    field=actorFootprintField(e,target,{terrainOnly:false,doors:true,avoidFire:true});step=select();
+  }
   return step?stepEnt(e,step.dx,step.dy):false;
 }
 function stepToward(e,x,y){
   if(!canActorMove(e))return false;
   return actorPathStep(e,{x:x,y:y})||stepEnt(e,Math.sign(x-e.x),Math.sign(y-e.y));
 }
-function chaseStep(e){if(!PDIST)refreshPlayerDistance();return actorPathStep(e,player,PDIST)||stepToward(e,player.x,player.y);}
-function allyFollowStep(e){if(!PDIST)refreshPlayerDistance();return actorPathStep(e,player,PDIST)||stepToward(e,player.x,player.y);}
+function chaseStep(e){if(!PDIST||PDIST.targetX!==player.x||PDIST.targetY!==player.y)refreshPlayerDistance();return actorPathStep(e,player,PDIST)||stepToward(e,player.x,player.y);}
+function allyFollowStep(e){if(!PDIST||PDIST.targetX!==player.x||PDIST.targetY!==player.y)refreshPlayerDistance();return actorPathStep(e,player,PDIST)||stepToward(e,player.x,player.y);}
 function fleeStep(e,threat){
   if(!canActorMove(e))return false;threat=threat||player;
   var step=FoteActors.bestStep(e,function(x,y){return dist({x:x,y:y},threat);},function(x,y,dx,dy){return actorCellAllowed(e,x,y,dx,dy);},true);
@@ -96,8 +138,11 @@ var gameActors=FoteActors.create({
     actorBehavior('morty',function(e){return e.kind==='morty';},function(e){mortyAct(e);return true;}),
     actorBehavior('deep-maw',function(e){return e.kind==='deepmaw';},function(e){mawAct(e);return true;}),
     actorBehavior('matron',function(e){return e.kind==='matron';},function(e){matronAct(e);return true;}),
+    actorBehavior('unmaker',function(e){return e.base.encounterId==='unmaker'&&typeof FoteUnmakerEncounter!=='undefined';},function(e){return FoteUnmakerEncounter.act(e);}),
+    actorBehavior('shadow-clone',function(e){return e.shadowClone&&typeof FoteShadowClone!=='undefined';},function(e){return FoteShadowClone.act(e);}),
     actorBehavior('living-flame',function(e){return e.ally&&e.rangedAlly;},function(e){livingFlameBehavior(e);return true;}),
     actorBehavior('ally',function(e){return e.ally;},basicAllyBehavior),
+    actorBehavior('chaos-preview',function(e){return !!e.base.chaosAI&&typeof FoteChaosEnemies!=='undefined';},function(e){return FoteChaosEnemies.act(e);}),
     actorBehavior('summon-retaliation',function(e){return e.foe&&!e.base.boss;},petRetaliationBehavior),
     actorBehavior('elemental-plane',function(e){return inFwa()&&e.base.fwa;},elementalPlaneBehavior),
     actorBehavior('underdark',function(e){return !!e.base.deepAI;},deepCreatureBehavior),

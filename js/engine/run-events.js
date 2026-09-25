@@ -4,7 +4,7 @@ function floorIntro(){
   if(floorMeta.forge) log('You feel heat in the stones. <b>The Elemental Forge</b> is on this floor.','c-kill');
   if(floorMeta.shrine) log('A distant hum of prayer: a <b>shrine to '+GODS[RUN.shrineGod].name+'</b> is on this floor.','c-kill');
   if(floorMeta.vault) log('Somewhere an iron vault is locked. Its key walks with one of the monsters.','c-info');
-  if(floorMeta.boss&&!inCaverns()&&!inDeep()) log('<b>The Warchief\'s hall.</b> Grukk waits on his throne. Kill him to open the way on.','c-you');
+  if(floorMeta.boss&&!inCaverns()&&!inDeep()&&!floorMeta.unmakerPreview) log('<b>The Warchief\'s hall.</b> Grukk waits on his throne. Kill him to open the way on.','c-you');
   (floorMeta.notes||[]).forEach(function(n){ log(n,'c-info'); });
   playSceneMusic();
 
@@ -16,6 +16,7 @@ function floorIntro(){
  }
 }
 function bossDefeated(e){
+ if(typeof FoteUnmakerEncounter!=='undefined'&&FoteUnmakerEncounter.onDefeated(e))return;
  if(floorMeta.bossRewarded)return;floorMeta.bossRewarded=true;
  if(RUN.cores===undefined)RUN.cores=0;var capBefore=affinityCap();
 
@@ -29,14 +30,22 @@ function bossDefeated(e){
  log('<b>'+e.base.name+' falls.</b> '+(e.kind==='matron'?'Her':'His')+' <b>'+coreName()+'</b> clatters to the floor, still burning with light. The exit gate will answer to it.','c-kill');
  if(affinityCap()!==capBefore)log('Your affinity cap is now <b>'+affinityCap()+'</b>.','c-kill');
 }
+function caveExitSpot(x,y,radius){
+  for(var r=0;r<=radius;r++)for(var dy=-r;dy<=r;dy++)for(var dx=-r;dx<=r;dx++){
+    if(Math.max(Math.abs(dx),Math.abs(dy))!==r)continue;
+    var nx=x+dx,ny=y+dy;
+    if(inb(nx,ny)&&at(nx,ny)===FLOOR&&walkable(nx,ny)&&!occupied(nx,ny)&&!itemAt(nx,ny))return {x:nx,y:ny};
+  }
+  return null;
+}
 function caveBossDown(){
     if(!RUN || RUN.victory || RUN.over || !floorMeta || floorMeta.caveWon) return;
     floorMeta.caveWon=true; RUN.bossDead=true;
     var A=floorMeta.bossArena, spot=null;
-    if(A){ var c={x:A.x+Math.floor(A.w/2), y:A.y+Math.floor(A.h/2)}; spot=(walkable(c.x,c.y) && !occupied(c.x,c.y)) ? c : nearFree(c.x,c.y,6); }
-    if(!spot) spot=nearFree(player.x,player.y,4);
-    if(spot){ setT(spot.x, spot.y, EXIT); floorMeta.exitOpen=true; floorMeta.caveExit=spot; if(typeof sparkleFx==='function') sparkleFx(spot.x,spot.y,'earth',30); }
-    log(floorNo<LAST_FLOOR?'<b>The Deep Maw is dead.</b> Its burrow gapes open, and warm air breathes up from far below: the way down into the Underdark. Gather what it left, then step in.':'<b>The Deep Maw is dead.</b> Its burrow gapes open: the way up and out of the Caverns. Gather what it left, then step in.','c-kill');
+    if(A)spot=caveExitSpot(A.x+Math.floor(A.w/2),A.y+Math.floor(A.h/2),6);
+    if(!spot)spot=caveExitSpot(player.x,player.y,4);
+    if(spot){ setT(spot.x, spot.y, EXIT); floorMeta.exitOpen=false; floorMeta.caveExit=spot; if(typeof sparkleFx==='function') sparkleFx(spot.x,spot.y,'earth',30); }
+    log(floorNo<LAST_FLOOR?'<b>The Deep Maw is dead.</b> Warm air rises through its burrow from the Underdark. Bring the Cavern Core to the opening to clear the way down.':'<b>The Deep Maw is dead.</b> Bring the Cavern Core to its burrow to clear the way out of the Caverns.','c-kill');
     if(!spot){var completedRun=RUN;setTimeout(function(){if(RUN===completedRun&&!RUN.over&&!RUN.victory)victory();},1500);}
     if(typeof draw==='function') draw();
   }
@@ -67,6 +76,10 @@ function renderEndSummary(won){
   if(won && floorNo>=LAST_FLOOR && inDeep()){
     var tt=$('overT'); if(tt) tt.textContent='The Underdark is behind you';
     var p=$('overP'); if(p) p.innerHTML=p.innerHTML.replace(/^[\s\S]*?<br><br>/, player.name+' cut down the Matron of the Web beneath her goddess\'s idol. The Underdark is behind you.<br><br>');
+  }
+  if(won&&floorMeta.unmakerEncounter&&floorMeta.unmakerEncounter.status==='victory'){
+    $('overT').textContent='The Forge of the Elements is restored';
+    $('overP').innerHTML=$('overP').innerHTML.replace(/^[\s\S]*?<br><br>/,player.name+' defeated the Unmaker and restored balance to the material plane. The elements burn in harmony once more.<br><br>');
   }
 }
 function renderEndActions(won){

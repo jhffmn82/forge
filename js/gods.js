@@ -202,6 +202,7 @@ function spendPrayer(id){
 }
 function usePrayer(id){
   if(gameTurns.busy())return false;
+  if(playerFearAction())return false;
   var before=player.t;
   var key=prayerId(id);
   try{return gameActions.run('prayer',player,null,{prayer:key},function(event){event.result=performPrayer(key);}).result;}
@@ -224,7 +225,7 @@ function performPrayer(id){
   spendPrayer(id);sfx('pray');setClip(player,'cast');
   var div=divineStrength();
   if(id==='ironhide'){player.buffs.ironhide=12;player.hideShield=Math.round((5+2*godRank())*div);derive(player);log('Iron Hide: armor and shield refreshed.','c-good');}
-  else if(id==='pummel'){player.pummel=3;log('Pummel empowers your next three successful unarmed hits.','c-good');}
+  else if(id==='pummel'){player.pummel=3;log('Pummel empowers your next three successful unarmed hits.','c-good');updateUI();draw();return true;}
   else if(id==='laststand'||id==='rampage'){player.buffs[id]=10;derive(player);updateUI();return true;}
   else if(id==='luckystreak'){player.buffs.luckystreak=8;derive(player);sfx('wobbles-giggle');updateUI();return true;}
   else if(id==='consecrate'){

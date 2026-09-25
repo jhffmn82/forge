@@ -6,7 +6,7 @@ function enchantValues(slot,el,actor){actor=actor||player;return FoteEnchantment
 function gearPassiveBonus(){return FoteEnchantments.gearBonus(enchantContext().vellumRank);}
 function enchantGodBonus(){return FoteEnchantments.godBonus(enchantContext());}
 function orbRootCrit(target){return infusion('orb')==='earth'&&target&&effectHasTag(target,'root')?enchantValues('orb','earth').critChance:0;}
-function criticalMultiplier(){return 1.6+(infusion('orb')==='shadow'?enchantValues('orb','shadow').critMultiplier:0);}
+function criticalMultiplier(){return FoteActions.criticalMultiplier(player.stats.agi,infusion('orb')==='shadow'?enchantValues('orb','shadow').critMultiplier:0);}
 
 /* ============================================================================
    combat.js - character math, damage, statuses, spells, abilities, monster AI.
@@ -29,9 +29,9 @@ var PASSIVES={
        {at:21,id:'cleaving',  name:'Cleaving Swings',d:'your attacks also hit one other adjacent enemy for half'},
        {at:25,id:'unstoppable',name:'Unstoppable',d:'immune to stun, slow and knockback, +20% melee damage'}],
   agi:[{at:12,id:'lightFeet',name:'Light Feet',d:'+8 evasion'},
-       {at:15,id:'deadeye',  name:'Deadeye',d:'+8% crit chance'},
+       {at:15,id:'deadeye',  name:'Deadeye',d:'+8 percentage points of crit chance and +25 percentage points of critical damage for all attacks and spells'},
        {at:18,id:'fleet',    name:'Fleet',d:'moving costs 15% less time'},
-       {at:21,id:'keenAim',  name:'Keen Aim',d:'your attacks ignore 25% of the target\'s evasion'},
+       {at:21,id:'keenAim',  name:'Keen Aim',d:'your attacks ignore 25% of the target\'s evasion; +25 more percentage points of critical damage for all attacks and spells'},
        {at:25,id:'blur',     name:'Blur',d:'hostile direct attacks have 20% less chance to hit you (minimum 15%)'}],
   vit:[{at:12,id:'tough',    name:'Tough',d:'+15% max HP'},
        {at:15,id:'resilient',name:'Resilient',d:'HP regeneration doubles below half HP'},
@@ -75,7 +75,7 @@ function costOf(A){
 /* Caster gear has distinct roles (2026-09-16):
    staff - the most spell damage and +1 spell range, and a real weapon, but two-handed
    wand  - a little spell damage; spells cost less mana; the off-hand stays free
-   orb   - no damage bonus; spell critical hits (x1.5). A cursed orb is a spell damage penalty instead. */
+   orb   - shared critical-hit chance for attacks and spells. A cursed orb is a spell damage penalty instead. */
 
 
 function focusKey(it){ if(!it) return null; var ic=(it.icon||'').replace(/^item-/,''); return FOCUS_BONUS[ic] ? ic : null; }
@@ -173,18 +173,37 @@ function divineDuration(n){ return n; }
 /* targeting: bolts stop at the first creature or wall in the way */
 function boltPath(ax,ay,bx,by){
   var pts=[], x=ax, y=ay, dx=Math.abs(bx-ax), dy=Math.abs(by-ay), sx=ax<bx?1:-1, sy=ay<by?1:-1, err=dx-dy;
+  var source=ents.find(function(e){return entityOccupies(e,ax,ay);});
   while(!(x===bx && y===by)){
     var e2=2*err; if(e2>-dy){ err-=dy; x+=sx; } if(e2<dx){ err+=dx; y+=sy; }
     pts.push({x:x,y:y});
     if(opaque(x,y) && !(x===bx&&y===by)) break;
-    if(occupied(x,y) && !(x===bx&&y===by) && !(x===player.x&&y===player.y)) break;
+    if(occupied(x,y,source) && !(x===bx&&y===by) && !(x===player.x&&y===player.y)) break;
   }
   return pts;
 }
 /* 2026-09-22 (Justin): a shooter has a clear shot only when nothing stands between it and its target. Enemies do not
    loose a projectile through their own ranks; the player's arrow hits whatever is in front. Clouds and lobbed
    sprays are not projectiles and do not use this. */
-function clearShot(a,b){ var p=boltPath(a.x,a.y,b.x,b.y), e=p[p.length-1]; return !!(e && e.x===b.x && e.y===b.y); }
+function projectileLine(source,target,options){
+  options=options||{};var targets=[],origins=[],preferred=options.target;
+  for(var y=target.y;y<target.y+entitySize(target);y++)for(var x=target.x;x<target.x+entitySize(target);x++){
+    if(options.visible&&!(revealAll||inb(x,y)&&vis[idxOf(x,y)]))continue;
+    if(Number.isFinite(options.range)&&dist(source,{x:x,y:y})>options.range)continue;
+    targets.push({x:x,y:y});
+  }
+  targets.sort(function(a,b){var ap=preferred&&a.x===preferred.x&&a.y===preferred.y,bp=preferred&&b.x===preferred.x&&b.y===preferred.y;return (bp?1:0)-(ap?1:0)||dist(a,source)-dist(b,source)||a.y-b.y||a.x-b.x;});
+  for(var sy=source.y;sy<source.y+entitySize(source);sy++)for(var sx=source.x;sx<source.x+entitySize(source);sx++)origins.push({x:sx,y:sy});
+  for(var i=0;i<targets.length;i++){
+    var to=targets[i];origins.sort(function(a,b){return dist(a,to)-dist(b,to)||a.y-b.y||a.x-b.x;});
+    for(var j=0;j<origins.length;j++){
+      var from=origins[j],path=boltPath(from.x,from.y,to.x,to.y),end=path[path.length-1];
+      if(end&&entityOccupies(target,end.x,end.y))return {from:from,to:to,path:path};
+    }
+  }
+  return null;
+}
+function clearShot(a,b){return !!projectileLine(a,b);}
 function previewPath(ax,ay,bx,by,A){
   if(A.kind!=='bolt') return;
   var pts=boltPath(ax,ay,bx,by); ctx.globalAlpha=0.35; ctx.fillStyle='#E8B44A';
@@ -195,7 +214,9 @@ function previewPath(ax,ay,bx,by,A){
 
 /* ---------------------------------------------------------------- monster AI */
 var PDIST=null;
-function refreshPlayerDistance(){ PDIST=bfsFrom(player.x,player.y); }
+/* AI movement uses eight legal directions and adjacent attack positions.
+ * Generation's cardinal flood fill remains independent. */
+function refreshPlayerDistance(){ PDIST=actorFootprintField({base:{}},player);PDIST.targetX=player.x;PDIST.targetY=player.y; }
 
 /* 2026-09-18: a surprise attack lands on anything that has not noticed you - asleep, or awake but not hunting
    you - and on something that noticed you only on its last turn (the door you just opened): it is still
@@ -383,7 +404,7 @@ function basicAllyBehavior(e){
   }
 
   var target=null, best=99;
-  ents.forEach(function(o){ if(!o.foe || !vis[idxOf(o.x,o.y)]) return true; var d=dist(e,o); if(d<best && d<=8){ best=d; target=o; } });
+  ents.forEach(function(o){ if(!o.foe || !actorVisible(o)) return true; var d=dist(e,o); if(d<best && d<=8){ best=d; target=o; } });
   if(target && target.x!==e.x) e.facingLeft=target.x<e.x;
   /* a raised Lich is a caster, not a brawler: it throws shadow bolts from range and backs away when
      something closes on it (2026-09-17 - the form's caster field was never wired up before) */
@@ -418,7 +439,7 @@ function basicAllyBehavior(e){
 
 function nearestFoe(range){
   var best=null, bd=99;
-  ents.forEach(function(e){ if(!e.foe || !vis[idxOf(e.x,e.y)]) return; var d=dist(player,e); if(d<=range && d<bd){ best=e; bd=d; } });
+  ents.forEach(function(e){ if(!e.foe || !actorVisible(e)) return; var d=dist(player,e); if(d<=range && d<bd){ best=e; bd=d; } });
   return best;
 }
 
@@ -448,7 +469,7 @@ function castBoltTarget(x,y){
   if(!inRange(x,y)){ log(((revealAll||vis[idxOf(x,y)]) ? 'Out of range.' : 'You cannot see that tile.'),'c-info'); sfx('ui-error'); return false; }
   if(A.kind==='summon') return castRaiseDead(x,y,A);
   var path=boltPath(player.x,player.y,x,y), end=path.length?path[path.length-1]:{x:x,y:y};
-  var f=ents.filter(function(e){ return e.foe && e.x===end.x && e.y===end.y; })[0];
+  var f=foeAt(end.x,end.y);
   var terrain = !f && (at(end.x,end.y)===ICEDOOR || at(end.x,end.y)===THORNS || propAt(end.x,end.y) || gAt(end.x,end.y)===G_GRASS);
   if(key==='challenge'){ if(!f){ log('Challenge whom?','c-info'); return false; } }
   if(!f && !(terrain && (A.type==='fire'||A.type==='phys'||A.type==='ice'||A.type==='lightning'))){ log(path.length && end.x!==x ? 'Something is in the way.' : 'Nothing to hit there.','c-info'); return false; }

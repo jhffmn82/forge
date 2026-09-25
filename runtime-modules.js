@@ -1,6 +1,7 @@
 /* Explicit module installation order. Start a run only after installation completes. */
 var FOTE_RUNTIME = {
   development: false,
+  developmentOnly: ["js/sandbox-builds.js"],
   modules: [
   "js/engine/state.js",
   "js/engine/codec.js",
@@ -24,6 +25,7 @@ var FOTE_RUNTIME = {
   "js/keybind.js",
   "game.js",
   "js/data.js",
+  "js/enemy-lore.js",
   "js/world.js",
   "js/render.js",
   "js/surface.js",
@@ -132,6 +134,24 @@ var FOTE_RUNTIME = {
   "js/engine/sigil-adapter.js",
   "js/engine/ui-adapter.js",
   "js/engine/run-events.js",
-  "js/engine/render-adapter.js"
+  "js/engine/render-adapter.js",
+  "js/chaos-preview.js",
+  "js/rot-preview.js",
+  "js/cinder-preview.js",
+  "js/violet-preview.js",
+  "js/mixed-chaos-preview.js",
+  "js/unmaker-preview.js",
+  "js/chaos-preview-art.js",
+  "js/chaos-preview-render.js",
+  "js/chaos-enemies.js",
+  "js/chaos-enemy-atlas.js",
+  "js/unmaker-atlas.js",
+  "js/chaos-enemy-art.js",
+  "js/chaos-encounters.js",
+  "js/unmaker-encounter.js",
+  "js/chaos-entry-preview.js",
+  "js/chaos-campaign.js",
+  "js/chaos-current-render.js",
+  "js/shadow-clone.js"
 ]
 };

@@ -31,7 +31,7 @@ function prepareCreatureDeath(event){
   if(b.rises&&!e.risen&&e._lastType!=='fire'&&e._lastType!=='light'&&!(e.st&&e.st.burn)){
     ents=ents.filter(function(other){return other!==e;});floorMeta.corpses=floorMeta.corpses||[];floorMeta.corpses.push({x:e.x,y:e.y,at:turn+3,kind:e.kind,maxhp:e.maxhp});
     if(vis[idxOf(e.x,e.y)])log('The <b>Shambler</b> collapses... and twitches. Finish it, or burn it.','c-info');
-    deathAnimation(e);event.deferred='shambler';return false;
+    deathAnimation(e,false);event.deferred='shambler';return false;
   }
   if(b.bursts){addCloud(e.x,e.y,1,5,sDMG(3+Math.floor(floorNo/3)),'bloat');if(vis[idxOf(e.x,e.y)])log('The <b>Grave Bloat</b> bursts in a cloud of rot!','c-you');sfx('trap-gas');}
   if(inCrypt()&&b.living!==false&&!b.object){floorMeta.deathSpots=floorMeta.deathSpots||[];floorMeta.deathSpots.push({x:e.x,y:e.y});if(floorMeta.deathSpots.length>12)floorMeta.deathSpots.shift();}
@@ -42,10 +42,18 @@ function prepareCreatureDeath(event){
   if(e.kind==='phylactery')phylacteryBreaks(e);
   return true;
 }
-function deathAnimation(e){
+function deathAnimation(e,persistent){
+  var visual={x:e.x,y:e.y,col:e.col,sprite:e.base.sprite,art:(e.base.art||.9)*(e.big?1.25:1),flip:(player.x<e.x)!==!!e.base.artLeft};
+  var remains;
+  if(persistent!==false&&visual.sprite){
+    floorMeta.deathRemains=floorMeta.deathRemains||[];
+    remains={id:e.id,e:visual,bornAt:worldNow(),expiresAt:worldNow()+2000};
+    floorMeta.deathRemains.push(remains);
+  }
   if(!(vis[idxOf(e.x,e.y)]||revealAll))return;
-  fx.push({k:'d',e:{x:e.x,y:e.y,col:e.col,sprite:e.base.sprite,art:e.base.art,flip:(player.x<e.x)!==!!e.base.artLeft},t0:Math.max(performance.now(),fxClock)+60,dur:900});
+  fx.push({k:'d',e:visual,remains:remains,t0:Math.max(performance.now(),fxClock)+60,dur:900});
 }
+
 function commitCreatureDeath(event){
   var e=event.entity,by=event.source;
   ents=ents.filter(function(other){return other!==e;});deathAnimation(e);
@@ -78,7 +86,11 @@ function rewardCreatureDeath(event){
   if(e.foe&&event.playerSide&&!e.noXp){
     [['heart',GLOBE_CHANCE],['managlobe',GLOBE_CHANCE]].forEach(function(globe){if(rng()>=globe[1])return;var spot=!items.some(function(it){return it.x===e.x&&it.y===e.y;})&&walkable(e.x,e.y)?{x:e.x,y:e.y}:nearFree(e.x,e.y,1);if(spot)items.push({kind:globe[0],x:spot.x,y:spot.y,until:turn+GLOBE_LIFE});});
   }
-  if(e.foe&&e.st&&e.st.burn&&aff('fire')>=6){var other=ents.filter(function(o){return o.foe&&o.hp>0&&dist(o,e)<=3;}).sort(function(a,b){return dist(a,e)-dist(b,e);})[0];if(other){applyStatus(other,'burn',3,burnDmg());boltFx(e.x,e.y,other.x,other.y,'fire');log('Wildfire leaps to '+other.name+'.','c-fire');}}
+  var burn=e.st&&e.st.burn,burnAffinity=burn&&burn.sourceAffinity;
+  if(e.foe&&burn&&(burnAffinity?burnAffinity.fire||0:aff('fire'))>=6){var other=ents.filter(function(o){return o.foe&&o.hp>0&&dist(o,e)<=3;}).sort(function(a,b){return dist(a,e)-dist(b,e);})[0];if(other){
+    if(burnAffinity)gameEffects.apply(other,'burn',3+(burn.sourceDuration||0),sDMG(2+(burnAffinity.fire||0)),{sourceAffinity:burnAffinity,data:{sourceAffinity:burnAffinity,sourceDuration:burn.sourceDuration||0},durationModifiers:false});
+    else applyStatus(other,'burn',3,burnDmg());
+    boltFx(e.x,e.y,other.x,other.y,'fire');log('Wildfire leaps to '+other.name+'.','c-fire');}}
   if(e.foe&&e.st&&e.st.burn&&combo('shadow','fire')&&(event.source===player||event.source==='player')){player.hidden=Math.max(player.hidden||0,3);log('Smolder: you vanish into the smoke.','c-good');}
 }
 function finishCreatureDeath(event){
