@@ -1,6 +1,32 @@
 # Forge of the Elements — Beta 1.3
 
-**September 26, 2026.** Beta 1.3 for the public beta and playtest sites. The itch.io build is unchanged.
+**September 27, 2026.** Beta 1.3 release notes for the public beta, playtest and itch.io builds.
+
+## Graphics and presentation
+
+- Refreshed environment floors, walls, fixtures, props, traps and vegetation using detailed source art across the dungeon, later biomes and elemental planes. Terrain contours, generated layouts and object footprints are preserved.
+- Replaced the old low-resolution pebble decoration layer, including the scattered stones beside walls.
+- Crates, pots and barrels show one detailed object per placement instead of a group. Their collision and loot are unchanged.
+- Corrected the new Goblin family artwork's facing, including Grukk, attack animations and corpses.
+- The Crypt Shambler has new artwork and animated idle, dragging walk, attack and death poses. Its fallen body, revival and combat behavior are preserved.
+- Moss patches have organic edges and fine 128px texture. Crypt floor stains no longer trace the old floor's coarse grout pattern.
+- Pots and skeletal remains are 20% smaller, keeping their existing placement and interaction footprint.
+- Floor chains are half their previous size.
+- Cavern kobold crates also draw as one object; removed a separate renderer that still duplicated them into clusters.
+- Cavern crystal pylons are 45% smaller, with matching sparkle effects, so they fit alongside doors and other scenery.
+- Cave bridges use detailed painted planks, metal fastenings and rope, rendered in continuous 128px sections along their existing crossings.
+- Natural Cavern and Underdark walls use detailed rock artwork with blended face shading, retaining each biome's colors and the existing room shapes.
+- Cave walls in all six elemental planes use the detailed 128px rock material, with each plane's colors and mineral veins.
+- Nearby light reaches 20% farther into visible Cavern and Underdark rock, making the wall detail easier to read while retaining fog of war and the existing floor lighting.
+- Underdark temple and natural floors use newly painted sources with true 128px detail per tile, including mixed-region boundaries. Existing floor layouts and hazards are preserved.
+- Open doors use their matching wood or iron artwork, with visible floor through the opening. Sideways doors stay attached to their hinge instead of leaving a detached plank across the wall.
+- Fixed thin bright Dungeon wall seams at fractional camera positions by baking the existing wall shading into cached textures, in both the preview and ordinary runs.
+- Enemy outline and ambient silhouette effects use half their former opacity, keeping sprites and world light sources unchanged.
+- Underdark volcanic caves use the Plane of Fire's basalt ground material, with their existing cave walls, shadows and lava hazards.
+- Nine ordinary trap types now use their refreshed sprites, retaining their discovery rules, triggers and animated effects.
+- The Unmaker's three beam pylons have dedicated sprites with separate idle and charging animations.
+- The local Sandbox inspector can open directly with a revealed map, frozen enemies and click-to-teleport. Its Depth selector covers all 25 floors and six elemental planes; inspection stays separate from adventure saves.
+- Block Art is available in Options and remembers your choice. Map scenery, actors, doors, traps, remains and special features follow the same block display mode.
 
 ## Changes
 
