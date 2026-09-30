@@ -8,4 +8,6 @@ Keyboard, mouse and touch controls are supported. Phones and tablets use landsca
 
 [Beta 1.4 patch notes](PATCH-NOTES.md). The in-game Version button also lists changes and checks for updates.
 
+[Devblog media](devblog/) is a permanent archive, preserved across game releases.
+
 Generated from source commit `c35442c2b7d84ccf8d9a2d4c457ccb29f48db0b8`. Built 2026-09-30 14:03:06 UTC.
