@@ -227,7 +227,7 @@ var GODS = {
       "Repelling Force: weapon hits and single-target spells have a 10% chance per rank to knock the enemy back 2 tiles.",
       "Perfect Invocation: gain Divine Power equal to your bonus Spell Power."
     ],
-    "gain": "Spell kills, mana spent on spells and mana globes picked up. Communion earns Favor from damaging attacks."
+    "gain": "Spell kills, mana spent on spells or invocations, and mana globes picked up. Communion earns Favor from damaging attacks."
   },
   "wobbles": {
     "name": "Wobbles, the Giggling Chaos",
@@ -463,12 +463,13 @@ var ABILITIES = {
   },
   "arcaneward": {
     "name": "Communion",
+    "instant": true,
     "cost": 8,
     "kind": "self",
     "icon": "ic-arcane-ward",
     "divine": true,
     "god": "vellum",
-    "desc": "Gain a shield and Communion for 8 turns. Damaging actions earn Favor."
+    "desc": "Gain a shield and Communion for 8 turns. Damaging actions earn Favor. Instant."
   },
   "challenge": {
     "name": "Challenge",
@@ -778,7 +779,7 @@ var PRAYERS = {
     "name": "Arcane Lance",
     "rank": 2,
     "favor": 5,
-    "desc": "Deal magic damage to one enemy within 6 tiles. Costs 5 Favor. No cooldown."
+    "desc": "Fire a magic bolt at an enemy or breakable object within 6 tiles. Costs 5 Favor. No cooldown."
   },
   "luckystreak": {
     "name": "Lucky Streak",
@@ -825,11 +826,11 @@ var DIVINE_COOLDOWNS = {
 
 /* ---------------------------------------------------------------- sigils (crafted at the Forge, found unidentified) */
 var SIGILS = {
-  firestorm:{name:'Fire sigil', motes:['fire'], desc:'Deal 8 + floor number fire damage and inflict Burning on enemies within 3 tiles.'},
-  mana:     {name:'Water sigil', motes:['water'], desc:'Restore 50% of your mana.'},
+  firestorm:{name:'Fire sigil', motes:['fire'], desc:'Deal fire damage to enemies within 3 tiles and Burn them for 3 turns. Ignite nearby ground.'},
+  mana:     {name:'Water sigil', motes:['water'], desc:'Restore mana and gain extra mana regeneration for 20 turns.'},
   levitate: {name:'Air sigil', motes:['air'], desc:'Clear roots and webs. Float for 25 turns: cross chasms and water; ignore roots, webs, floor traps and ground hazards.'},
-  stoneskin:{name:'Earth sigil', motes:['earth'], desc:'Clear Poison and Stun. For 15 turns: immune to both and poison damage; -3 physical damage per hit.'},
-  heal:     {name:'Light sigil', motes:['light'], desc:'Heal 35% of max HP, then 5% a turn for 15 turns.'},
+  stoneskin:{name:'Earth sigil', motes:['earth'], desc:'Clear Poison and Stun. Gain Stone Skin for 15 turns: immunity to Poison, Stun and poison damage, plus physical protection.'},
+  heal:     {name:'Light sigil', motes:['light'], desc:'Heal yourself, then recover more HP each turn for 15 turns.'},
   vanish:   {name:'Shadow sigil', motes:['shadow'], desc:'Vanish for 5 turns; enemies lose track of you.'},
   identify: {name:'Sigil of Knowing', motes:['light','shadow'], desc:'Identify every sigil you carry.'},
   mapping:  {name:'Sigil of the Deep Map', motes:['shadow','earth'], desc:'Reveal this floor\'s layout.'},
@@ -864,6 +865,8 @@ var TRAPS = {
 var PROPS = {
   'barrel':{b:1,br:1,burn:1,loot:0.35,sfx:'crate-break'}, 'crate':{b:1,br:1,burn:1,loot:0.40,sfx:'crate-break'},
   'pot':{b:1,br:1,loot:0.45,sfx:'pot-break'}, 'bush':{b:1,br:1,burn:1,loot:0.25,sfx:'step-grass',bush:1}, 'barrel-explosive':{b:1,br:1,ex:1,burn:1},
+  'barrel-poison':{b:1,br:1,burn:1,fluid:'poison',artName:'barrel'},
+  'barrel-water':{b:1,br:1,burn:1,fluid:'water',artName:'barrel'},
   'brazier-lit':{b:1,light:'#FF9A40'}, 'brazier-unlit':{b:1}, 'torch-stand':{b:1,light:'#FFB050'},
   'bones':{flat:1}, 'weapon-rack':{b:1}, 'bookshelf':{b:1,burn:1}, 'cage':{b:1}, 'statue':{b:1}, 'statue-broken':{b:1},
   'mushrooms':{flat:1,light:'#6FB7FF',dim:1}, 'vines':{flat:1,burn:1}, 'ice-block':{b:1,br:1,melt:1}, 'altar-spikes':{b:1,altar:1},
@@ -876,23 +879,23 @@ var PROPS = {
 var MONSTERS = {
   rat:     {name:'Dungeon Rat', sprite:'m-rat', col:'#8C7A63', ch:'r', hp:8, dmg:[4,5], acc:56, eva:22, armor:0, speed:100, range:1, xp:4,
             band:[1,3], w:26, pack:[2,3], art:0.75, sfx:'rat', living:true},
-  bat:     {name:'Cave Bat', sprite:'m-bat', col:'#9E8CA8', ch:'b', hp:8, dmg:[2,3], acc:58, eva:44, armor:0, speed:170, range:1, xp:6,
+  bat:     {name:'Cave Bat', sprite:'m-bat', col:'#9E8CA8', ch:'b', hp:8, dmg:[2,3], acc:58, eva:44, armor:0, speed:200, range:1, xp:6,
             band:[1,2], w:6, erratic:true, flying:true, art:0.7, sfx:'bat', living:true},
   goblin:  {name:'Goblin', sprite:'m-goblin', col:'#6F9350', ch:'g', hp:16, dmg:[5,7], acc:60, eva:16, armor:1, speed:100, range:1, xp:8,
             band:[1,5], w:26, art:0.9, sfx:'goblin', living:true, artLeft:true},
   archer:  {name:'Goblin Archer', sprite:'m-goblin-archer', col:'#B8894A', ch:'a', hp:14, dmg:[3,5], acc:60, eva:18, armor:0, speed:100, range:6, xp:10,
             band:[2,5], w:18, kiter:true, art:0.9, sfx:'goblin', living:true, artLeft:true},
-  brute:   {name:'Goblin Brute', sprite:'m-goblin-brute', col:'#4E7A3C', ch:'G', hp:30, dmg:[5,8], acc:58, eva:10, armor:2, speed:100, range:1, xp:18,hint:'Unblocked melee hits can push the target 1 tile. 4-turn cooldown; no extra damage.',
+  brute:   {name:'Goblin Brute', sprite:'m-goblin-brute', col:'#4E7A3C', ch:'G', hp:30, dmg:[5,8], acc:58, eva:10, armor:6, speed:100, range:1, xp:18,hint:'Heavy armor. Melee hits can push you back. 4-turn cooldown.',
             band:[3,5], w:14, art:1.05, sfx:'brute', living:true, artLeft:true},
-  slime:   {name:'Rock Slime', sprite:'m-rock-slime', col:'#7C8C9E', ch:'s', hp:24, dmg:[4,6], acc:54, eva:8, armor:3, speed:70, range:1, xp:16, rootSpit:true,
+  slime:   {name:'Rock Slime', sprite:'m-rock-slime', col:'#7C8C9E', ch:'s', hp:32, dmg:[4,6], acc:54, eva:8, armor:3, speed:70, range:1, xp:16, rootSpit:true,
             band:[2,4], w:12, splits:true, art:0.8, artLeft:true, sfx:'slime',
-            hint:'Regenerates 2 HP per turn. Damage at full HP splits it into two slimes sharing its remaining HP. Either can split again at full HP.'},
-  pebbleslime:{name:'Pebble Slime', sprite:'m-slime', col:'#7C8C9E', ch:'s', hp:10, dmg:[2,3], acc:54, eva:8, armor:0, speed:70, range:1, xp:8,
+            hint:'Heals 2 HP per turn. Splits when hit at full health. Spits roots.'},
+  pebbleslime:{name:'Pebble Slime', sprite:'m-slime', col:'#7C8C9E', ch:'s', hp:18, dmg:[2,3], acc:54, eva:8, armor:0, speed:70, range:1, xp:8,
             band:[1,1], biome:[0], w:12, pebbleSlam:true, art:0.65, sfx:'slime',
             hint:'Marks a tile before striking. Move off the mark.'},
   shaman:  {name:'Goblin Shaman', sprite:'m-goblin-shaman', col:'#C25A3A', ch:'h', hp:16, dmg:[3,5], acc:64, eva:14, armor:0, speed:100, range:1, xp:18,
             band:[3,5], w:10, caster:'firebolt', castRange:6, castEvery:4, el:'fire', art:0.9, sfx:'shaman', living:true, spellcaster:true, artLeft:true},
-  skeleton:{name:'Skeleton', sprite:'m-skeleton', col:'#D8CEBC', ch:'k', hp:16, dmg:[3,5], acc:62, eva:18, armor:2, speed:100, range:1, xp:18,
+  skeleton:{name:'Skeleton', sprite:'m-skeleton', col:'#D8CEBC', ch:'k', hp:32, summonHp:16, dmg:[3,5], acc:62, eva:18, armor:2, speed:100, range:1, xp:18,
             band:[9,9], w:0, undead:true, art:0.95, sfx:'skeleton'},
   mimic:   {name:'Mimic', sprite:'m-mimic', col:'#8A5A2A', ch:'m', hp:30, dmg:[5,8], acc:64, eva:10, armor:3, speed:100, range:1, xp:30,
             band:[9,9], w:0, art:0.85, sfx:'mimic'},
@@ -926,5 +929,5 @@ var DROPS = {
 /* summoned forms for Mother Murk's Raise Dead, by piety rank */
 var UNDEAD_FORMS = [
   {rank:1, kind:'skeleton', name:'Risen Skeleton', hp:14, dmg:[3,6]},
-  {rank:5, kind:'skeleton', name:'Lich', hp:26, dmg:[5,9], caster:'shadowbolt', sprite:'m-lich', art:1.0}
+  {rank:5, kind:'skeleton', name:'Lich', hp:26, dmg:[5,9], caster:'shadowbolt', sprite:'m-lich', art:1.22}
 ];

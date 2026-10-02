@@ -138,6 +138,8 @@ function generatePlaneBase(el, seed){
   for(var j=0;j<W*H;j++){ var ox=j%W, oy=(j/W)|0; if(walkable(ox,oy) && !propAt(ox,oy) && map[j]!==PORTAL && Math.abs(ox-player.x)+Math.abs(oy-player.y)>9) open.push({x:ox,y:oy}); }
   var n=12+bfloor()*2;
   for(var k=0;k<n && open.length;k++){
+    // Hound companions may already occupy a later entry in the candidate list.
+    open=open.filter(function(c){return !occupied(c.x,c.y);});if(!open.length)break;
     var c=open.splice(Math.floor(rr()*open.length),1)[0];
     var kind=roster.mobs[Math.floor(rr()*roster.mobs.length)], e=spawn(kind, c.x, c.y);
     e.state = rr()<0.6 ? 'asleep' : 'wander';
@@ -215,7 +217,7 @@ function planeTick(){
         if(t!==player && t.base && (PLANE_ROSTER[el].mobs.indexOf(t.kind)>=0 || t.kind===PLANE_ROSTER[el].elite)) return;
         var hd=applyDamage(t, roll(5,8)+Math.floor(floorNo/2), el==='light'?'light':'phys', null); floatText(t.x,t.y,String(hd), el==='light'?'light':'phys');
         if(el==='light') applyStatus(t,'blind',2);
-        if(t===player){ log(el==='light' ? 'The floor flares with blinding light: '+hd+'!' : 'Rocks crash down on you: '+hd+'!','c-you'); if(player.hp<=0){  if(player.hp<=0) death(); } }
+        if(t===player){ log((el==='light'?'Light flare: ':'Falling rocks: ')+combatDamageNumber(hd,el==='light'?'light':'phys')+(el==='light'&&gameEffects.has(t,'blind')?'; Blind':'')+'.','c-you'); if(player.hp<=0){  if(player.hp<=0) death(); } }
         else if(t.hp<=0) kill(t, null);
       });
     });
@@ -234,7 +236,7 @@ function planeTick(){
     cells=cells.filter(function(v,i,a){ return a.indexOf(v)===i; });
     floorMeta.hazardPending={cells:cells, at:turn+2};
     floorMeta.marks.push({cells:cells, col: el==='light' ? '#FFD84A' : '#B08A5A', until:turn+2, kind:'hazard'});
-    log(el==='light' ? 'Gold light gathers in the stones around you...' : 'Dust trickles from the cave roof...','c-you');
+    log(el==='light' ? '<b>Light flare:</b> leave marked ground!' : '<b>Falling rocks:</b> leave marked ground!','c-you',{priority:'warning'});
   }
 }
 
@@ -270,12 +272,12 @@ function planeCreatureBehavior(e){
       if(hurt && e.healCd<=0){ var h=Math.min(hurt.maxhp-hurt.hp, 8); hurt.hp+=h; floatText(hurt.x,hurt.y,'+'+h,'heal'); sparkleFx(hurt.x,hurt.y,'light',16); e.healCd=2;  return true; }
       if(d<=3 && fleeStep(e)){  return true; }
     }
-    if(b.howls && !e.howled && see){ e.howled=true; log('The <b>Umbral Hound</b> howls! Everything in the dark turns toward you.','c-you'); ents.forEach(function(o){ if(o.foe && o.state!=='hunt' && dist(o,e)<=14){ o.state='hunt'; o.lastSeen={x:player.x,y:player.y}; } });  return true; }
+    if(b.howls && !e.howled && see){ e.howled=true; log('Umbral Hound: nearby enemies alerted.','c-you'); ents.forEach(function(o){ if(o.foe && o.state!=='hunt' && dist(o,e)<=14){ o.state='hunt'; o.lastSeen={x:player.x,y:player.y}; } });  return true; }
     if(b.burrows&&canActorMove(e)){
       e.bCd=(e.bCd||0)-1;
-      if(!e.burrowed && d>2 && e.bCd<=0){ e.burrowed=true; e.bCd=6; if(vis[idxOf(e.x,e.y)]) log('The <b>Burrower</b> dives into the ground.','c-info');  return true; }
+      if(!e.burrowed && d>2 && e.bCd<=0){ e.burrowed=true; e.bCd=6; if(vis[idxOf(e.x,e.y)]) log('Burrower dives.','c-info');  return true; }
       if(e.burrowed){
-        if(d<=1 || e.bCd<=3){ var sp=nearFree(player.x,player.y,1); if(sp){ e.x=sp.x; e.y=sp.y; } e.burrowed=false; SHAKE=4; log('The <b>Burrower</b> bursts up beside you!','c-you');  return true; }
+        if(d<=1 || e.bCd<=3){ var sp=nearFree(player.x,player.y,1); if(sp){ e.x=sp.x; e.y=sp.y; } e.burrowed=false; SHAKE=4; log('Burrower emerges!','c-you');  return true; }
         var nx=e.x+Math.sign(player.x-e.x), ny=e.y+Math.sign(player.y-e.y); if(inb(nx,ny) && at(nx,ny)!==WALL && !occupied(nx,ny)){ e.x=nx; e.y=ny; }
          return true;
       }
@@ -290,7 +292,7 @@ function planeCreatureBehavior(e){
           e.x=s2.x; e.y=s2.y; e._lx=undefined; e.tpCd=3;
           sparkleFx(s2.x, s2.y, 'dark', 30); if(typeof ringFx==='function') ringFx(s2.x, s2.y, '#B98CFF', 2);
           if(typeof sfx==='function') sfx('vanish',{from:e});
-          log('The <b>'+e.name+'</b> steps through the shadows.','c-info');  return true;
+          log(combatText(e.name)+': teleported.','c-info');  return true;
         }
       }
     }
@@ -298,11 +300,11 @@ function planeCreatureBehavior(e){
       e.brandCd=(e.brandCd||0)-1;
       if(e.brand && turn>=e.brand.at){
         var dmg=Math.min(Math.round(e.brand.stored), Math.round(player.maxhp*0.4)); var los=canSeePlayer(e); e.brand=null;
-        if(los && dmg>0){ var bd=applyDamage(player, dmg, 'light', e); floatText(player.x,player.y,String(bd),'light'); log('<b>Judgment!</b> The brand burns you for the harm you dealt: '+bd+'.','c-you'); if(player.hp<=0) kill(player,e); }
-        else log('You broke the '+e.name+'\'s line of sight: the brand fades harmlessly.','c-good');
+        if(los && dmg>0){ var bd=applyDamage(player, dmg, 'light', e); floatText(player.x,player.y,String(bd),'light'); log('Judgment: '+combatDamageNumber(bd,'light')+'.','c-you'); if(player.hp<=0) kill(player,e); }
+        else log('Judgment fades.','c-good');
          return true;
       }
-      if(!e.brand && e.brandCd<=0 && see){ e.brand={at:turn+3, stored:0}; e.brandCd=7; setClip(e,'attack'); log('The <b>'+e.name+'</b> brands you with judgment. Whatever harm you deal it in the next 3 turns will come back to you, unless you break its line of sight.','c-you');  return true; }
+      if(!e.brand && e.brandCd<=0 && see){ e.brand={at:turn+3, stored:0}; e.brandCd=7; setClip(e,'attack'); log('<b>Judgment:</b> damage dealt returns in 3 turns. Break sight!','c-you',{priority:'warning'});  return true; }
     }
   }
   if(b.still){
@@ -325,7 +327,7 @@ function planeCreatureBehavior(e){
       if(typeof burst==='function') burst(player.x, player.y, 'earth', 20, 0.06);
       var sd=applyDamage(player, roll(7,11)+Math.floor(floorNo/2), 'phys', e);
       floatText(player.x, player.y, String(sd), 'phys');
-      log('<b>'+e.name+'</b> drives stone spikes up through the floor: <b>'+sd+'</b>.','c-you');
+      log(combatText(e.name)+' spikes: '+combatDamageNumber(sd,'phys')+'.','c-you');
       if(rng()<0.35) applyStatus(player,'root',2);
       if(player.hp<=0) kill(player, e);
        return true;
@@ -347,8 +349,21 @@ function refreshEncounterTuning(){
     (chaosCombat.hazards||[]).forEach(function(h){h.damage=Math.max(1,Math.round(h.damage*1.5));});
     chaosCombat.damageVersion=2;
   }
-  ents.concat(floorMeta.buriedGhouls||[]).forEach(function(e){
-    if(!e.base || e.hp<=0)return;
+  ents.concat(floorMeta.buriedGhouls||[],floorMeta.pendingLich?[floorMeta.pendingLich.entity]:[]).forEach(function(e){
+    if(!e||!e.base)return;
+    if(e.ally&&e.undeadServant){
+      var form=UNDEAD_FORMS.find(function(f){return f.sprite&&f.sprite===e.base.sprite;});
+      if(form&&form.art)e.base=Object.assign({},e.base,{art:form.art});
+    }
+    if(e.hp<=0)return;
+    if(e.foe&&!e.ally&&!floorMeta.plane&&!floorMeta.chaosPreview){
+      var combatTuning={bat:['speed'],brute:['armor','hint'],shade:['speed','chillTouch','attackType'],bonearcher:['poisons'],
+        ghoul:['bleeds','bleedTurns','bleedDamage'],acolyte:['fearTouch','hint']}[e.kind];
+      if(combatTuning&&MONSTERS[e.kind]){
+        e.base=Object.assign({},e.base);
+        combatTuning.forEach(function(key){e.base[key]=MONSTERS[e.kind][key];});
+      }
+    }
     if(e.kind==='ghoul'){
       var ghoulBase=MONSTERS.ghoul;
       if(e.base.hp>0&&e.base.hp!==ghoulBase.hp){
@@ -364,15 +379,15 @@ function refreshEncounterTuning(){
       e.col=ghoulBase.col;
     }
     if(e.kind==='drowblade'&&!e.base.spawnInvisible){e.base=Object.assign({},e.base,{spawnInvisible:true});if(e.state==='hunt')e.visibilityRevealed=true;}
-    if(e.kind==='slime'||e.kind==='greenslime'){
+    if(['slime','greenslime','pebbleslime','caveslime'].indexOf(e.kind)>=0&&e.foe&&!e.ally&&!floorMeta.plane&&!floorMeta.chaosPreview){
       var slimeBase=MONSTERS[e.kind];
       if(e.base.hp>0&&e.base.hp!==slimeBase.hp){
         var slimeHealth=e.hp/e.maxhp;e.maxhp=Math.max(1,Math.round(e.maxhp*slimeBase.hp/e.base.hp));
         e.hp=Math.max(1,Math.min(e.maxhp,Math.round(e.maxhp*slimeHealth)));
       }
-      e.base=Object.assign({},e.base,{hp:slimeBase.hp,xp:slimeBase.xp,sprite:slimeBase.sprite,hint:slimeBase.hint,artLeft:slimeBase.artLeft});
+      e.base=Object.assign({},e.base,{hp:slimeBase.hp,armor:slimeBase.armor,xp:slimeBase.xp,sprite:slimeBase.sprite,hint:slimeBase.hint,artLeft:slimeBase.artLeft});
       if(e.slimeDescendant||e.small||e.slimeOffspring||e.greenOffspring||e.noLoot){e.noXp=true;e.slimeDescendant=true;}
-      if(e.small||e.slimeOffspring||e.greenOffspring){
+      if((e.kind==='slime'||e.kind==='greenslime')&&(e.small||e.slimeOffspring||e.greenOffspring)){
         e.name=slimeBase.name;e.base=Object.assign({},slimeBase);e.maxhp=Math.max(e.hp,sHP(slimeBase.hp));
         e.dmg=slimeBase.dmg.map(function(n){return sDMG(n);});e.beta11Balanced=false;
         delete e.small;delete e.slimeOffspring;delete e.greenOffspring;
@@ -380,6 +395,7 @@ function refreshEncounterTuning(){
       delete e.split;delete e.greenSplit;
     }
     if(typeof applyEarlyFloorEnemyTuning==='function')applyEarlyFloorEnemyTuning(e);
+    if(typeof isUnderdarkEnemy==='function'&&isUnderdarkEnemy(e))betaEnemyBalance(e);
     if(['bat','slime','caveslime','shade','stalker','gloommoth','dawnsentinel','halowisp','prismscarab','radiantwarden','chaos-rift-skitter','chaos-lens-bearer','chaos-lash-dancer','chaos-razor-dancer'].indexOf(e.kind)>=0){
       var tuned=MONSTERS[e.kind];if(tuned){e.base=Object.assign({},e.base);['eva','el','rootSpit','attackType','chillTouch'].forEach(function(key){if(tuned[key]!==undefined)e.base[key]=tuned[key];});}
     }

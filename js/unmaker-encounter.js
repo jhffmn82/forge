@@ -17,7 +17,7 @@
   var hints=[
     'Keeps up to 3 Chaos demons at its side in every form. Shoulder Rush carries it up to 4 tiles toward you. Great Cleave marks the ground up to 2 tiles in front of it: circle its flank. It shrugs off Fear and Stun, but Blind, Root and Slow still work.',
     'Three floating Prism Pylons each mark a line and fire down it 2 turns later; the beam does not follow you. The Unbound takes turns casting Rupture and Inversion Pulse, and demons keep coming. Step off the marked tiles or behind cover. The pylons float, so they never block your way. It shrugs off Fear and Stun.',
-    'Keeps up to 3 Chaos demons at its side in every form. Discord Pulse strikes the red tiles first and the violet tiles next, and you get a turn to move before each. It shrugs off Fear and Stun.'
+    'Keeps up to 3 Chaos demons at its side in every form. Discord Pulse strikes the inner ring first, then the outer ring. You get a turn to move before each: step out, then back in. It shrugs off Fear and Stun.'
   ];
   forms.forEach(function(form,index){
     MONSTERS[form.kind]=Object.assign({hp:4500,acc:85,eva:24,range:1,xp:1500,band:[99,99],w:0,
@@ -80,7 +80,7 @@
       s.warning=null;e.windup=null;s.majorReadyAt=clock()+200;s.summonReadyAt=clock();
       ensurePylons(s);
       if(!quiet){animation(e,'transition','cast');burst(e.x,e.y,phase===2?'magic':'light',38,.08);
-        log(phase===2?'The armor breaks apart. <b>The Unbound</b> unfurls its crystal wings. <b>Three Prism Pylons awaken</b>, and each charges its own beam!':'The body shatters. The <b>Heart of Discord</b> calls demons through the breach.','c-kill');}
+        log(phase===2?'<b>The Unbound:</b> 3 Prism Pylons charge beams!':'<b>Heart of Discord:</b> demons incoming!','c-kill',{priority:'warning'});}
     }
     return changed;
   }
@@ -125,7 +125,7 @@
   }
   function direct(e,target,amount,type){
     var damage=applyDamage(target,sDMG(amount),type,e,{tags:['area','unmaker']});floatText(target.x,target.y,String(damage),type,true);
-    if(target===player&&damage>0)log('The Unmaker deals '+damage+' '+FoteDamage.label(type)+' damage.','c-you');if(target.hp<=0)kill(target,e);return damage;
+    if(target===player&&damage>0)log('Unmaker → you: '+damage+' '+FoteDamage.label(type)+'.','c-you');if(target.hp<=0)kill(target,e);return damage;
   }
   function spell(e,target){
     var s=state(),type=elements[s.elementIndex++%elements.length],chance=hitChance(accOf(e),evaOf(target));
@@ -177,7 +177,7 @@
     else {var pulse=planPulse(e);tiles=pulse.tiles;outer=pulse.outer;}
     if(!tiles.length)return false;
     var w={unmaker:true,kind:kind,tiles:tiles,outer:outer,origin:origin,armedTurn:turn,beat:1,due:1};s.warning=w;e.windup=w;
-    animation(e,kind==='pulse'?'pulse-inner':kind,'cast');log('<b>'+({cleave:'Great Cleave: circle its flank!',rupture:'Rupture: leave the marked ground!',ring:'Inversion Pulse: get in close!',pulse:'Discord Pulse: red first, then violet. Step out, then back in!'})[kind]+'</b>','c-info');return true;
+    animation(e,kind==='pulse'?'pulse-inner':kind,'cast');log('<b>'+({cleave:'Great Cleave: circle its flank!',rupture:'Rupture: leave the marked ground!',ring:'Inversion Pulse: get in close!',pulse:'Discord Pulse: inner ring, then outer. Step out, then back in!'})[kind]+'</b>','c-info',{priority:'warning'});return true;
   }
   function release(e){
     var s=state(),w=s.warning;if(!w||turn<=w.armedTurn)return true;
@@ -223,7 +223,7 @@
       var tiles=safePattern(beamTiles(p,target),e,pendingTiles());
       if(!tiles.length){p.readyAt=now+100;return;}
       p.warning={kind:'pylon-beam',tiles:tiles,origin:{x:p.x,y:p.y},armedTurn:turn,fireAt:now+200};
-      log('<b>Prism Pylon '+pylonSites[p.id].label+'</b> charges a beam. It fires in 2 turns.','c-info');
+      log('<b>Pylon '+pylonSites[p.id].label+':</b> beam in 2 turns!','c-info');
     });
   }
   function rush(e,target){
@@ -245,7 +245,7 @@
       if(!add)continue;add.unmakerOwnerId=e.id;add.chaosAlerted=true;add.lastSeen={x:player.x,y:player.y};add.t=clock()+100;
       s.summoned++;(s.summonIds||(s.summonIds=[])).push(add.id);born++;burst(add.x,add.y,'dark',20,.06);
     }
-    if(!born)return false;s.summonReadyAt=clock()+400;animation(e,'summon','cast');log('The Unmaker tears open a breach. <b>Chaos demons answer.</b>','c-you');return true;
+    if(!born)return false;s.summonReadyAt=clock()+400;animation(e,'summon','cast');log('<b>Chaos demons summoned!</b>','c-you');return true;
   }
   function act(e){
     var s=state();if(!s||s.status!=='active'||!owns(e)||e.hp<=0)return false;
@@ -331,21 +331,10 @@
   }
   function drawTelegraphs(now){
     var s=state();if(!s||s.status!=='active')return;var w=s.warning;
-    function paint(tiles,second){if(!tiles)return;tiles.forEach(function(t){if(!(revealAll||vis[idxOf(t[0],t[1])]))return;
-      var x=(t[0]-camX)*TS,y=(t[1]-camY)*TS;ctx.fillStyle=second?'rgba(149,95,245,.19)':'rgba(245,69,46,.32)';ctx.fillRect(x+1,y+1,TS-2,TS-2);
-      ctx.strokeStyle=second?'#C397FF':'#FFAA78';ctx.lineWidth=Math.max(1,TS*.045);ctx.strokeRect(x+2,y+2,TS-4,TS-4);
-    });}
-    ctx.save();if(w){paint(w.outer,true);paint(w.tiles,false);}
+    ctx.save();if(w){drawBossDangerTiles(w.outer,2,now);drawBossDangerTiles(w.tiles,1,now);}
     (s.pylons||[]).forEach(function(p){
       var site=pylonSites[p.id],warning=p.warning;
-      if(warning)warning.tiles.forEach(function(t){
-        if(!(revealAll||vis[idxOf(t[0],t[1])]))return;
-        var x=(t[0]-camX)*TS,y=(t[1]-camY)*TS;
-        ctx.globalAlpha=.25;ctx.fillStyle=site.color;ctx.fillRect(x+2,y+2,TS-4,TS-4);ctx.globalAlpha=1;
-        ctx.strokeStyle=site.color;ctx.lineWidth=Math.max(1,TS*.045);ctx.setLineDash([TS*.12,TS*.07]);ctx.strokeRect(x+3,y+3,TS-6,TS-6);ctx.setLineDash([]);
-        // Insets distinguish a pylon beam from the boss's solid red area.
-        ctx.beginPath();ctx.moveTo(x+TS*.38,y+TS*.5);ctx.lineTo(x+TS*.62,y+TS*.5);ctx.stroke();
-      });
+      if(warning)drawBossDangerTiles(warning.tiles,Math.ceil((warning.fireAt-clock())/100),now);
       if(!(revealAll||vis[idxOf(p.x,p.y)]))return;
       var px=(p.x-camX)*TS,py=(p.y-camY)*TS;
       ctx.strokeStyle=site.color;ctx.lineWidth=Math.max(1,TS*.04);ctx.beginPath();ctx.ellipse(px+TS*.5,py+TS*.83,TS*.35,TS*.13,0,0,Math.PI*2);ctx.stroke();

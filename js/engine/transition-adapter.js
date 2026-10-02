@@ -63,7 +63,7 @@ var planeGeneration=FoteTransitions.stages([
   {name:'plane-clusters',run:function(c){dressPlaneClusters(c.element,c.seed);}},
   {name:'elemental-plane-hazards',run:function(c){dressElementalPlane(c.element,c.seed);}}
 ]);
-function buildPlaneFloor(element,seed){resetMapDimensions();planeGeneration.run({element:element,seed:seed});if(typeof FoteShadowClone!=='undefined')FoteShadowClone.arrive();}
+function buildPlaneFloor(element,seed){resetMapDimensions();planeGeneration.run({element:element,seed:seed});if(typeof FoteShadowClone!=='undefined')FoteShadowClone.arrive();arriveRarePet();}
 
 var tileEntry=FoteTransitions.stages([
   {name:'persistent-webs',run:function(){if(typeof FoteEnemyFields!=='undefined')FoteEnemyFields.enter(player);}},
@@ -79,6 +79,11 @@ var tileEntry=FoteTransitions.stages([
 function stepOn(){tileEntry.run({hpBefore:player.hp});}
 
 var movementEntry=FoteTransitions.stages([
+  {name:'face-direction',run:function(c){
+    if(!player||player.hp<=0||RUN.victory)return true;
+    /* Bumps turn too, including terrain actions that finish before ordinary movement. */
+    var face=faceOf(c.dx,c.dy);if(face)player.face=face;
+  }},
   {name:'impassable-void',run:function(c){
     if(floorMeta&&floorMeta.impassableVoid&&at(player.x+c.dx,player.y+c.dy)===CHASM){log('The void cannot be crossed. Use a bridge or portal.','c-info');return true;}
   }},

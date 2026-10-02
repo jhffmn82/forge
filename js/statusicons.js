@@ -38,7 +38,7 @@ var STATUS_INFO = {
   haste:     {name:'Haste', icon:'ic-flame-step', d:'Movement, attacks and spellcasting are 30% faster.'},
   moltenring:{name:'Molten Ring', icon:'ic-firebolt', d:'Attacks and single-target spells deal 5 additional fire damage.'},
   cinder:    {name:'Cinder Stride', icon:'ic-flame-step', d:'Faster, leaving fire where you step.'},
-  manaflow:  {name:'Mana Flow', icon:'pr-manatide', d:'Mana returns twice as fast.'},
+  manaflow:  {name:'Mana Flow', icon:'pr-manatide', d:'Recover an extra 0.9% of max Mana each turn.'},
   afterglow: {name:'Afterglow', icon:'ic-heal', d:'Heal 5% max HP per turn.'},
   discipline:{name:"Warrior's Discipline", icon:'ic-charge', d:'+2 damage per stack, up to one stack per rank. Every ability you use adds a stack and renews them all.'},   /* 2026-09-29 (Justin): Grumbok rank 5; Charge's icon, no new art */
   thorns:    {name:'Thorns', icon:'ic-earth-root', d:'Enemies that hit you in melee take half the damage back.'},
@@ -82,7 +82,7 @@ function statusList(e){
   if(e.boneWard)out.push({k:'boneward',t:0});
   if(e!==player&&e.rallyUntil>player.t)out.push({k:'rally',t:Math.ceil((e.rallyUntil-player.t)/100)});
   if(e===player){
-    for(var b in (player.buffs||{})) if(b!=='hardened'&&player.buffs[b]>0) out.push({k:b, t:player.buffs[b]});
+    for(var b in (player.buffs||{})) if(b!=='hardened'&&player.buffs[b]>0&&!(b==='arcaneward'&&player.buffs.communion>0)) out.push({k:b, t:player.buffs[b]});
     if(player.hidden>0) out.push({k:'hidden', t:player.hidden});
     if(player.levitate>0) out.push({k:'levitate', t:player.levitate});
     if(player.stillness>0)out.push({k:'stillness',t:player.stillness});
@@ -100,6 +100,7 @@ function statusList(e){
       var amulet=e.amulet,look=typeof RUN!=='undefined'&&RUN.amuletLook&&RUN.amuletLook.stillness;
       I=Object.assign({},I,{icon:amulet&&amulet.amulet==='stillness'&&amulet.icon||look&&'item-amulet-'+look||I.icon});
     }
+    if(o.k==='communion'&&e.ward>0)I=Object.assign({},I,{d:'Ward: '+Math.round(e.ward)+' HP. '+I.d});
     if(o.k==='rally'&&e!==player)I=Object.assign({},I,{d:'Rallied: attacks deal 10% more damage.'});
     if(o.k==='stone'&&e!==player) I={name:'Petrified',icon:'st-stone',bad:1,d:'Can\'t move or act. Evasion is 0.'};
     if(o.k==='livingmountain'||o.k==='discipline') I=Object.assign({},I,{name:I.name+' ×'+(e.st[o.k].n||0)});

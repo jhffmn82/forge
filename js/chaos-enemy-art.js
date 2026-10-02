@@ -4,7 +4,7 @@
   'use strict';
   var names=['prism-seer','folded-horror','rift-skitter','lens-bearer','plague-bloat','brood-carrier','bile-spitter','rotling','horned-reaver','gorehound','ironbound','chain-reaver','lash-dancer','razor-dancer','silk-weaver','hookfang'].map(function(n){return 'm-chaos-'+n;});
   var loaded=Object.create(null),pending=Object.create(null);
-  function active(){return !!(typeof floorMeta!=='undefined'&&floorMeta&&floorMeta.chaosPreview&&/^(chaos-mixed|unmaker-crucible)$/.test(floorMeta.chaosPreview.biome));}
+  function active(){return !!(typeof floorMeta!=='undefined'&&floorMeta&&((floorMeta.ritualChaos||floorMeta.chaosIncursion)||floorMeta.chaosPreview&&/^(chaos-mixed|unmaker-crucible)$/.test(floorMeta.chaosPreview.biome)));}
   function definitions(){return Object.assign({},root.CHAOS_ENEMY_ATLAS||{},root.UNMAKER_ATLAS||{});}
   function valid(spec){
     return spec&&typeof spec.file==='string'&&/^mob-m-(?:chaos|unmaker)-[a-z-]+\.webp$/.test(spec.file)&&Number.isInteger(spec.cell)&&spec.cell>0&&
@@ -33,18 +33,18 @@
     var selected=requested||names,key=selected.slice().sort().join(',');if(pending[key])return pending[key];var specs=definitions();
     pending[key]=Promise.all(selected.map(function(name){return load(name,specs[name]);})).then(function(){delete pending[key];},function(error){delete pending[key];throw error;});return pending[key];
   }
-  function sheet(name){return active()&&loaded[name]?loaded[name].sheet:null;}
+  function sheet(name){
+    if(!active())return null;
+    if(!loaded[name]&&definitions()[name])ensureAssets([name]).catch(function(error){console.error(error);});
+    return loaded[name]?loaded[name].sheet:null;
+  }
   function visible(x,y){return inb(x,y)&&(revealAll||vis[idxOf(x,y)]);}
   function drawHazards(now){
-    if(!active())return;var pulse=ANIM.reduce?.65:.58+.18*Math.sin((now||0)/260);
-    ctx.save();ctx.globalAlpha=1;
+    if(!active())return;
     ((floorMeta.chaosCombat||{}).hazards||[]).forEach(function(hazard){
-      hazard.tiles.forEach(function(tile){var x=tile[0],y=tile[1];if(!visible(x,y))return;var px=(x-camX)*TS,py=(y-camY)*TS;
-        ctx.fillStyle='rgba(133,215,43,.3)';ctx.fillRect(px+2,py+2,TS-4,TS-4);ctx.strokeStyle='rgba(203,255,88,'+pulse+')';ctx.lineWidth=Math.max(1,TS*.035);ctx.strokeRect(px+2,py+2,TS-4,TS-4);
-        ctx.beginPath();ctx.moveTo(px+TS*.22,py+TS*.7);ctx.lineTo(px+TS*.7,py+TS*.22);ctx.moveTo(px+TS*.4,py+TS*.8);ctx.lineTo(px+TS*.8,py+TS*.4);ctx.stroke();
-      });
+      var cells=hazard.tiles.map(function(tile){return idxOf(tile[0],tile[1]);});
+      drawGroundMaterial('poison',cells,.92);drawFieldMist(cells,'#93ae64',now,.16);
     });
-    ctx.restore();
   }
   function drawActorCues(e,px,py,now){
     if(!active()||!e.base||!e.base.chaosAI||!actorVisible(e))return;

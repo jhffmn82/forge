@@ -14,13 +14,23 @@
   #modal header h2{font-family:var(--display);color:var(--gold);font-size:22px;margin:0}
   #modal .mbody{padding:14px 16px;overflow-y:auto;line-height:1.5;font-size:12.5px;color:var(--ink)}
   #modal .mbody p{margin:0 0 8px}
+  .merchant-summary{position:sticky;top:-14px;z-index:2;display:flex;justify-content:space-between;gap:12px;padding:12px 0;background:var(--panel,#211b16);border-bottom:1px solid var(--edge);margin-bottom:14px}
+  .merchant-summary b{color:var(--gold);white-space:nowrap}.merchant-summary span{color:var(--dim)}
+  .merchant-section{margin:18px 0 22px}.merchant-section h3{margin:0 0 8px;color:var(--gold);font:18px var(--display)}
+  .merchant-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .merchant-card{display:grid;grid-template-columns:32px minmax(0,1fr) auto 70px;align-items:center;gap:8px;padding:10px;border:1px solid var(--edge);border-radius:6px;background:rgba(0,0,0,.12)}
+  .merchant-card.sold{opacity:.55}.merchant-card .merchant-name{line-height:1.35;overflow-wrap:anywhere}.merchant-price{text-align:right;white-space:nowrap;color:var(--gold);font-size:12px}.merchant-price small{display:block;color:var(--dim);font-size:10px}
+  .merchant-card button{margin:0;min-height:32px;padding:5px 8px}.merchant-card details{grid-column:2/-1;font-size:12px}.merchant-card summary{cursor:pointer;color:var(--dim)}
+  .merchant-card details[open]{padding-top:5px}.merchant-card .pico{display:block}.merchant-card [data-merchant-icon]{display:flex;align-items:center;justify-content:center}
+  @media(max-width:850px){.merchant-grid{grid-template-columns:1fr}.merchant-summary{flex-wrap:wrap}.merchant-card{grid-template-columns:28px minmax(0,1fr) auto 62px}}
   #modal footer{padding:10px 16px;border-top:1px solid var(--edge);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
   #modal footer button.primary, .btn-primary{background:linear-gradient(180deg,#8A4A1E,#5A2E12);border-color:#B8653A;color:#FFE9C8}
   #modal footer button:disabled, button:disabled{opacity:.38;cursor:default;border-color:var(--edge)!important;color:var(--dim)!important}
   .bossbar{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:5;width:min(420px,70%);text-align:center;font-family:var(--display);color:#E8B44A;font-size:15px;text-shadow:0 1px 3px #000;pointer-events:none}
   .bossbar .bb{height:9px;border:1px solid #5A2E18;background:#1A0E0A;border-radius:4px;overflow:hidden;margin-top:3px}
   .bossbar .bb i{display:block;height:100%;background:linear-gradient(90deg,#8E2F27,#E2622B)}
-  .shrine{display:grid;grid-template-columns:130px 1fr;gap:14px;align-items:start}
+  .shrine-head{display:grid;grid-template-columns:130px minmax(0,1fr);gap:14px;align-items:start;margin-bottom:12px}
+  .shrine-details{min-width:0;overflow-wrap:anywhere}
   .shrine h3,.faith h3{font-family:var(--display);font-size:20px;margin:0}
   .boons{margin:0 0 8px 18px;padding:0} .boons li{margin:2px 0}
   .forge-top{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
@@ -86,7 +96,7 @@
   #create .summary .big{height:230px;display:flex;align-items:flex-end;justify-content:center}
   #create .go{font-size:16px;padding:10px 26px;margin-top:10px}
   #create input{width:220px;font-size:14px}
-  @media (max-width:640px){ #create .summary{grid-template-columns:1fr} .shrine{grid-template-columns:1fr} }
+  @media (max-width:640px){ #create .summary{grid-template-columns:1fr} .shrine-head{grid-template-columns:80px minmax(0,1fr);gap:10px} .shrine-head .shrine-art{max-width:80px;overflow:hidden} .shrine-head .shrine-art canvas{max-width:100%;height:auto!important} }
   `;
   var s=document.createElement('style'); s.textContent=css; document.head.appendChild(s);
 })();
@@ -208,7 +218,7 @@ function itemIcon(name, size){ return iconCanvas(null, size, '\u2726'); }
   var top=$('top');
   if(top && !$('topbtns')){
     var tb=document.createElement('div'); tb.id='topbtns';
-    tb.innerHTML='<button id="bMute" title="Sound on/off (m)">Sound</button><button id="bMusic" title="Music on/off (n)">Music</button>';
+    tb.innerHTML='<button id="bMute" title="Sound on/off (v)">Sound</button><button id="bMusic" title="Music on/off (n)">Music</button>';
     top.appendChild(tb);
   }
 })();
@@ -217,8 +227,24 @@ function hudResourceCard(kind){
   function number(n){return Math.round(n||0).toLocaleString('en-US');}
   function escape(s){return String(s).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
   function row(label,value){return '<div class="row"><span>'+label+'</span><b>'+value+'</b></div>';}
+  if(kind==='character')return '<div class="nm">Character</div>'+row('Level',number(player.level))+(player.god?row(escape(GODS[player.god].name),'Rank '+godRank()):'')+(player.points>0?row('Unspent points',number(player.points)):'')+'<div class="hint">Open attributes and passives.</div>';
+  if(kind==='points')return '<div class="nm">Attribute points</div>'+row('Unspent',number(player.points))+'<div class="hint">Open Character to spend them.</div>';
+  if(kind==='inventory')return '<div class="nm">Inventory</div>'+row('Bag',(player.bag||[]).length+' / '+BAG_MAX)+'<div class="hint">Open equipment, items and motes.</div>';
+  if(kind==='faith')return '<div class="nm">Faith</div>'+(player.god?row(escape(GODS[player.god].name),'Rank '+godRank()):'<div class="hint">No god followed.</div>')+'<div class="hint">Open divine abilities and offerings.</div>';
+  if(kind==='menu')return '<div class="nm">Menu</div><div class="hint">Character, Inventory, Faith, Options and combat log.</div>';
+  if(kind==='options')return '<div class="nm">Options</div><div class="hint">Controls, display and audio.</div>';
+  if(kind==='history')return '<div class="nm">Combat log</div><div class="hint">Read the full log.</div>';
+  if(kind==='history-close')return '<div class="nm">Close log</div><div class="hint">Return to the dungeon.</div>';
+  if(kind==='sound')return '<div class="nm">Sound</div>'+row('Audio',AUDIO.muted?'Off':'On')+'<div class="hint">'+(AUDIO.muted?'Unmute':'Mute')+' game audio.</div>';
+  if(kind==='map')return '<div class="nm">Map</div><div class="hint">'+(typeof AUTOMAP_ON!=='undefined'&&AUTOMAP_ON?'Hide the map overlay.':'Show the explored dungeon.')+'</div>';
+  if(kind==='explore'){
+    var exploring=typeof autoExploreActive==='function'&&autoExploreActive(),complete=typeof floorMeta!=='undefined'&&floorMeta&&floorMeta.exploreComplete;
+    return '<div class="nm">'+(exploring?'Stop exploring':complete?'Next floor':'Explore')+'</div><div class="hint">'+(exploring?'Stop travelling.':complete?'Walk to the stairs and descend.':'Walk through unexplored areas.')+'</div>';
+  }
+  if(kind.indexOf('move:')===0)return '<div class="nm">Move '+escape(kind.slice(5))+'</div><div class="hint">Move one tile.</div>';
+  if(kind==='search')return '<div class="nm">Wait and search</div><div class="hint">Spend a turn searching nearby.</div>';
   if(kind==='hp')return '<div class="nm">Health</div>'+row('HP',number(player.hp)+' / '+number(player.maxhp))+(playerShield()>0?row('Shield',number(playerShield()))+'<div class="hint">'+escape(shieldParts().join(', '))+'. Shields absorb damage before HP.</div>':'');
-  if(kind==='mp')return '<div class="nm">Mana</div>'+row('MP',number(Math.floor(player.mp))+' / '+number(player.maxmp))+'<div class="hint">Used to cast spells and abilities that cost mana.</div>';
+  if(kind==='mp')return '<div class="nm">Mana</div>'+row('Mana',number(Math.floor(player.mp))+' / '+number(player.maxmp));
   if(kind==='xp')return '<div class="nm">Experience</div>'+row('Level',player.level)+row('XP',number(player.xp)+' / '+number(player.xpNext))+'<div class="hint">'+(player.level>=20?'Maximum level reached. Further XP still counts toward your run total.':number(Math.max(0,player.xpNext-player.xp))+' XP to the next level.')+'</div>';
   if(kind==='stock')return '<div class="nm">Essence &amp; keys</div>'+row('Essence',number(player.essence))+row('Iron keys',number(player.keys&&player.keys.iron))+row('Crystal keys',number(player.keys&&player.keys.crystal))+'<div class="hint">Essence pays for crafting, upgrades and enchantments at a forge. Keys open locked doors on the floor where you find them.</div>';
   if(kind==='motes')return '<div class="nm">Elemental motes</div>'+['fire','water','earth','air','light','shadow'].map(function(k){return row(cap(k),number(player.motes[k]));}).join('')+'<div class="hint">Infuse carried motes when claiming a boss core or at a forge. Open Gear to see your pouch.</div>';
@@ -242,7 +268,7 @@ function bindHudResourceCard(element,kind){
   if(element._hudResourceCard===kind)return;
   element._hudResourceCard=kind;if(element.tabIndex<0)element.tabIndex=0;
   hoverCard(element,function(){return hudResourceCard(kind);});
-  element.addEventListener('focus',function(){var r=element.getBoundingClientRect();showCard(hudResourceCard(kind),{clientX:r.left,clientY:r.bottom,isTrusted:false});});
+  element.addEventListener('focus',function(){if(document.body.classList.contains('touch'))return;var r=element.getBoundingClientRect();showCard(hudResourceCard(kind),{clientX:r.left,clientY:r.bottom,isTrusted:false});});
   element.addEventListener('blur',hideCard);
   element.addEventListener('click',hideCard);
 }
@@ -476,13 +502,15 @@ function inspectHTML(mx,my){
   var e=ents.find(function(o){return entityOccupies(o,mx,my)&&o!==player&&!actorConcealed(o);});
   if(e && e.parent) e=e.parent;   /* a big elite's other cells report the creature itself, not its proxy */
   if(e && (revealAll||vis[idxOf(mx,my)])){
-    if(e.ally) return '<div class="nm">'+e.name+'</div><div class="row"><span>HP</span><b>'+Math.max(0,e.hp)+' / '+e.maxhp+'</b></div><div class="hint enemy-lore">'+enemyLore(e)+'</div><div class="hint">Fights for you.</div>';
-    var ch=Math.round(hitChance(player.acc,evaOf(e))*100), back=Math.round(hitChance(e.base.acc,evaOf(player))*100);
+    if(e.merchantRoom!==undefined)return '<div class="nm">'+e.name+'</div><div class="hint">A traveling Myconid trader. Offers rare sigils, elemental motes and Masterwork equipment for essence.</div><div class="hint">Click or approach to browse the stock.</div>';
+    if(e.hungrySpiderRoom!==undefined&&!e.foe&&!e.ally)return '<div class="nm">'+e.name+'</div><div class="hint">Hungry... everything dead.</div><div class="hint">It watches you without attacking.</div>';
+    if(e.ally) return '<div class="nm">'+e.name+'</div><div class="row"><span>HP</span><b>'+Math.max(0,Math.round(e.hp))+' / '+Math.round(e.maxhp)+'</b></div><div class="hint enemy-lore">'+enemyLore(e)+'</div><div class="hint">Fights for you.</div>';
+    var ch=Math.round(hitChance(player.acc,evaOf(e))*100), back=Math.round(hitChance(accOf(e),evaOf(player))*100);
     var lo=Math.max(1,Math.round(player.dmg[0]-Math.min(armorOf(e),player.dmg[0]*0.5))), hi=Math.max(1,Math.round(player.dmg[1]-Math.min(armorOf(e),player.dmg[1]*0.5)));
     var st=Object.keys(e.st).filter(function(k){ return k.indexOf('imm_')!==0; }).map(function(k){ return '<span class="tag t-'+k+'">'+k+'</span>'; }).join(' ');
     return '<div class="nm">'+e.name+'</div>'+
       '<div class="hint enemy-lore">'+enemyLore(e)+'</div>'+
-      '<div class="row"><span>HP</span><b>'+Math.max(0,e.hp)+' / '+e.maxhp+'</b></div>'+
+      '<div class="row"><span>HP</span><b>'+Math.max(0,Math.round(e.hp))+' / '+Math.round(e.maxhp)+'</b></div>'+
       '<div class="row"><span>Armor &middot; Evasion</span><b>'+armorOf(e)+' &middot; '+evaOf(e)+'</b></div>'+
       (e.base.el?'<div class="row"><span>Element</span><b style="color:'+AFF_COL[e.base.el]+'">'+cap(e.base.el)+'</b></div>':'')+
       '<div class="row"><span>State</span><b>'+(e.st.stun?'stunned':e.st.frozen?'frozen':e.state==='throne'?'on his throne':({hunt:'hunting',wander:'wandering'}[e.state]||e.state))+'</b></div>'+
@@ -514,8 +542,13 @@ function inspectHTML(mx,my){
         (lever.used?'Already pulled':'Ready to pull')+'</b></div><div class="hint">'+
         (lever.used?lever.result:action+' or bump this lever to '+lever.effect+'.')+'</div>';
     }
+    if(p.sentry||p.sentinel||p.guardianStatue){
+      var guardianRoom=puzzleRoomAt(p.x,p.y),quiet=guardianRoom&&guardianRoom.puzzle.solved;
+      var sentry=p.sentry||guardianRoom&&guardianRoom.puzzle.kind==='sentries';
+      return '<div class="nm">'+(sentry?'Stone Sentry':'Stone Sentinel')+'</div><div class="hint">'+(quiet?'Dormant guardian.':sentry?'Fires at visible targets. Pillars block its bolts; concealment, Shadow mastery or the lever lets you pass.':'Awakens on entry. Stoneskin or Earth mastery lets you pass; the lever disables it.')+'</div>';
+    }
     var pn=({'urn-group':'urns','stack-group':p.kinds && p.kinds.indexOf('pot')>=0 && p.kinds.indexOf('crate')<0 ? 'pots' : 'crates and barrels','urn-shattered':'broken urn','urn-tall':'urn','urn-squat':'urn','urn-ornate':'urn','barrel-explosive':'powder barrel','altar-spikes':'sacrifice altar','drow-altar-blood':'sacrifice altar'})[p.name] || p.name.replace(/-/g,' ');
-    var hint = p.ex ? 'Explodes when broken or burned.' : p.br ? 'Breakable. Might hold something.' : p.tablet ? 'A broken tablet. Read it.' :
+    var hint = p.breakReward ? 'A blade is embedded in the moss-covered stone.' : p.merchantId!==undefined ? 'Browse the merchant stock. Purchases cost essence.' : p.ritual&&p.prisoner ? 'Captive: '+p.captiveHp+'/'+p.captiveMaxhp+' HP. The ritual drains 2 HP per round. Free them or interrupt the priestess.' : p.ex ? 'Explodes when broken or burned.' : p.br ? 'Breakable. Might hold something.' : p.tablet ? 'A broken tablet. Read it.' :
       p.altar ? 'Offer blood for rewards.' : p.prisoner ? 'Someone is locked inside. Let them out and hope they are grateful.' : p.name==='elemental-lock' ? 'Wants one '+p.element+' mote.' : p.drink ? 'Drink from it.' :
       p.bush ? 'Cut it down. Sometimes a heart is tucked underneath.' : '';
     /* 2026-09-19: Justin - scenery you cannot do anything with gets no card at all */
@@ -528,6 +561,7 @@ function inspectHTML(mx,my){
   /* Map cards belong to things you can inspect or use, not terrain. */
   if([2,3,4,5,7,9,10,11,12,13,14,18,19,20].indexOf(t)<0) return '';
   var label=TILE_NAMES[t]||'Floor';
+  if(t===CHEST&&chestKind[idxOf(mx,my)]==='chest-gold')label='Gold chest';
   if(t===SHRINE) label='Shrine to '+GODS[RUN.shrineGod].name;
   if(typeof PORTAL!=='undefined' && t===PORTAL && floorMeta.portal && typeof PLANE_TITLE!=='undefined') label='Portal to '+PLANE_TITLE[floorMeta.portal];
   var tileHint=t===EXIT ? (floorMeta.exitOpen ? 'Open. Step through to go on.' : 'Sealed. Bring '+bossNameForFloor().replace(/^The /,'the ')+'\'s '+coreName()+' here to open it.') : TILE_HINTS[t];
@@ -551,8 +585,9 @@ function inspectHTML(mx,my){
 
 /* ---------------------------------------------------------------- keys */
 window.addEventListener('keydown', function(ev){
+  if(typeof FoteResponsiveHUD!=='undefined'&&FoteResponsiveHUD.hasOverlay())return;
   var tgt=ev.target.tagName;
-  var editing=tgt==='INPUT'||tgt==='SELECT'||tgt==='TEXTAREA';
+  var editing=tgt==='INPUT'||tgt==='SELECT'||tgt==='TEXTAREA'||(tgt==='BUTTON'&&ev.target.closest('[data-seg]'));
   if($('create') && $('create').classList.contains('on')) { if(!editing)ev.stopImmediatePropagation(); return; }
   if(modalOpen){
     if(ev.key==='Escape'){closeModal();ev.preventDefault();}
@@ -570,7 +605,7 @@ window.addEventListener('keydown', function(ev){
   if(editing)return;
   if(RUN && (RUN.over || RUN.victory)){ ev.stopImmediatePropagation(); return; }
   var k=ev.key;
-  if(k==='m'){ audioInit(); toggleMute(); syncAudioButtons(); ev.stopImmediatePropagation(); return; }
+  if(k==='v'){ audioInit(); toggleMute(); syncAudioButtons(); ev.stopImmediatePropagation(); return; }
   if(k==='n'){ audioInit(); toggleMusic(); syncAudioButtons(); ev.stopImmediatePropagation(); return; }
   if(openSheet && k!=='Escape' && k!=='p' && k!=='i' && k!=='Tab') return;
   if(k==='p'){ showSheet('Faith'); ev.stopImmediatePropagation(); return; }

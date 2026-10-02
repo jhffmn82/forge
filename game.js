@@ -83,8 +83,9 @@ function carveCorridor(ax,ay,bx,by,force){
 }
 function doorSpot(x,y,horizontalWall){
   if(at(x,y)!==FLOOR) return false;
-  if(horizontalWall) return at(x-1,y)===WALL && at(x+1,y)===WALL;
-  return at(x,y-1)===WALL && at(x,y+1)===WALL;
+  function passage(t){return t===FLOOR||t===DOOR||t===OPEN;}
+  if(horizontalWall) return at(x-1,y)===WALL && at(x+1,y)===WALL && passage(at(x,y-1)) && passage(at(x,y+1));
+  return at(x,y-1)===WALL && at(x,y+1)===WALL && passage(at(x-1,y)) && passage(at(x+1,y));
 }
 
 /* ============ field of view ============ */
@@ -103,9 +104,18 @@ function fxAt(dur, hold, unseen){          /* each effect starts after the one b
   return t;
 }
 function floatText(x,y,text,type,big){
+  // Keep fractional simulation values out of combat labels.
+  text=String(text).replace(/^([+-]?)(\d+(?:\.\d+)?)(\s*(?:hp|mp))?$/i,function(_,sign,n,unit){return sign+Math.round(Number(n))+(unit||'');});
   var seen=inb(x,y) && (revealAll || vis[idxOf(x,y)]) && turnAnimationOnscreen(x,y);
+  var start=fxAt(760,120,!seen), offset=0;
+  /* Equal-duration labels rise together. Pick a free vertical position at this
+     label's start, so a hit, proc and heal remain legible without extra delay. */
+  var occupied=fx.filter(function(f){return f.k==='t'&&f.x===x&&f.y===y&&f.t0+f.dur>start;})
+    .map(function(f){return (f.offsetY||0)-0.9*(start-f.t0)/f.dur;})
+    .sort(function(a,b){return a-b;});
+  occupied.forEach(function(y){if(Math.abs(offset-y)<0.46)offset=y+0.46;});
   fx.push({k:'t', x:x, y:y, text:text, col:DMG_COL[type]||DMG_COL.phys,
-           big:!!big, t0:fxAt(760,120,!seen), dur:760, jitter:(rng()-0.5)*0.4});
+           big:!!big, t0:start, dur:760, offsetY:offset, jitter:(rng()-0.5)*0.4});
 }
 function lungeFx(e, tx, ty){
   var dur=230;
@@ -130,7 +140,12 @@ var fxIdleFrames=0, lastFrame=0;
 function hitChance(acc,eva){ return clamp(.75+.0075*(acc-80)-.0075*(eva-30), 0.15, 0.95); }
 
 /* ============ player actions ============ */
-function cancelAim(){ if(!aiming) return; aiming=null; abilityBar(); draw(); }
+function cancelAim(){
+  if(!aiming && !(typeof BOWAIM!=='undefined' && BOWAIM)) return;
+  aiming=null;
+  if(typeof BOWAIM!=='undefined') BOWAIM=null;
+  abilityBar(); draw();
+}
 
 /* ============ sprites ============ =======================================
    Every creature and character draws from the packed sheets (art/packed, via assets.js). The sandbox's
@@ -148,9 +163,11 @@ function setMotion(mode){
   try{localStorage.setItem('astra-temple-motion',mode);}catch(e){}
   var b=document.getElementById('bMotion');
   if(b) b.textContent = 'Motion: '+(mode==='auto' ? (OS_REDUCE?'auto (off)':'auto (on)') : mode);
+  if(typeof FoteResponsiveHUD!=='undefined')FoteResponsiveHUD.renderReadouts();
 }
 function faceOf(dx,dy){
-  if(Math.abs(dx)>Math.abs(dy)) return dx<0 ? 'west' : 'east';
+  /* Diagonal steps turn the side-facing body and equipment with their horizontal direction. */
+  if(dx && Math.abs(dx)>=Math.abs(dy)) return dx<0 ? 'west' : 'east';
   if(dy) return dy<0 ? 'north' : 'south';
   return null;
 }
@@ -220,11 +237,19 @@ function resize(){
   var W=Math.max(140, box.width), H=Math.max(110, box.height);
   /* how many tiles we try to show across and down - fewer tiles, bigger tiles */
   var z=ZOOM[zoomKey]||ZOOM.normal;
+  // The minimal phone HUD frees the map to show desktop Normal coverage.
+  // Keep mobile's traditional targets and explicit close/wide choices intact.
+  if(zoomKey==='phone' && typeof uiHudMode==='function' && uiHudMode()==='minimal'){
+    z=innerWidth>innerHeight?ZOOM.normal:[ZOOM.normal[0],ZOOM.normal[0]];
+  }
   /* Opts > Map zoom (options.js) scales that. It lives here, not in a wrapper, because the map's
      ResizeObserver below holds this function itself - a wrapper was skipped whenever a sheet closed. */
   var zm=(typeof MAP_ZOOM_MUL!=='undefined' && MAP_ZOOM_MUL[MAP_ZOOM]) || 1;
   if(zm!==1) z=[Math.max(7, Math.round(z[0]*zm)), Math.max(6, Math.round(z[1]*zm))];
-  TS = clamp(Math.floor(Math.min(W/z[0], H/z[1])), 14, 72);
+  /* Floating controls do not reserve map space. Landscape zoom is measured in
+     rows, so phones, tablets and PCs keep the same coverage vertically. */
+  var fitRows=innerWidth>innerHeight && typeof uiHudMode==='function' && uiHudMode()==='minimal';
+  TS = fitRows ? Math.max(14,Math.floor(H/z[1])) : clamp(Math.floor(Math.min(W/z[0], H/z[1])), 14, 72);
   /* Cover landscape's map panel with whole tiles and clip the excess at its
      edges. Rounding down left a visible frame around the centered canvas.
      Keep CSS pixels tied to TS so tapping still picks the drawn tile. */
@@ -281,11 +306,12 @@ function hoverCard(el, htmlFn){
 /* ============ interface ============ */
 var SHEETS={Char:'Character', Equip:'Equipment', Sand:'Sandbox', Help:'Keys'};
 var openSheet=null;
-function log(html, cls){
+function log(html, cls, options){
   var d=document.createElement('div'); d.className=cls||'c-info'; d.innerHTML=html;
   var L=$('log'); L.appendChild(d);
   while(L.children.length>90) L.removeChild(L.firstChild);
   L.scrollTop=L.scrollHeight;
+  if(typeof FoteCombatLog!=='undefined')FoteCombatLog.onEntry(html,cls,options);
 }
 /* redraw the open sheet in place - showSheet() toggles, so calling it to refresh closed the menu */
 /* ---- drag and drop ------------------------------------------------------
@@ -407,12 +433,12 @@ window.addEventListener('keydown', function(ev){
   if(typeof uiOpen==='function'&&uiOpen()&&!openSheet)return;
   if(tgt==='INPUT'||tgt==='SELECT') return;
   var k=ev.key;
-  if(k==='Escape'){ if(aiming) cancelAim(); else if(openSheet) showSheet(openSheet); return; }
+  if(k==='Escape'){ if(aiming || (typeof BOWAIM!=='undefined' && BOWAIM)) cancelAim(); else if(openSheet) showSheet(openSheet); return; }
   if(player.hp<=0 || openSheet) return;
   if(KEYS[k]){ ev.preventDefault();
-    if(aiming){ cancelAim(); return; }
+    if(aiming || (typeof BOWAIM!=='undefined' && BOWAIM)){ cancelAim(); return; }
     lastDir=KEYS[k]; tryMove(KEYS[k][0],KEYS[k][1]); return; }
-  if(k==='.'||k===' '){ ev.preventDefault(); log('You wait.','c-info'); endTurn(); return; }
+  if(k==='.'||k===' '){ ev.preventDefault(); endTurn(); return; }
   if(k==='>'){ if(at(player.x,player.y)===STAIRS) descend(); else log('No stairs here.','c-info'); return; }
   if(k==='g'){ if(grab()) endTurn(); return; }
   if(k==='x'){ swapWeapon(); return; }
@@ -434,7 +460,7 @@ cv.addEventListener('click', function(ev){
   var dx=Math.sign(mx-player.x), dy=Math.sign(my-player.y);
   if(dx||dy){ lastDir=[dx,dy]; tryMove(dx,dy); }
 });
-cv.addEventListener('contextmenu', function(ev){ if(aiming){ ev.preventDefault(); cancelAim(); } });
+cv.addEventListener('contextmenu', function(ev){ if(aiming || (typeof BOWAIM!=='undefined' && BOWAIM)){ ev.preventDefault(); cancelAim(); } });
 $('tabs').addEventListener('click', function(ev){
   var b=ev.target.closest('button[data-p]'); if(!b) return;
   showSheet(b.getAttribute('data-p'));

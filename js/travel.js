@@ -54,6 +54,8 @@ function clickIntent(x, y){
     if(player.range>1 && dist(player,foe)<=player.range) return {kind:'shoot', foe:foe};
     return {kind:'move', foe:foe};
   }
+  var spider=ents.find(function(e){return e.hp>0&&e.hungrySpiderRoom!==undefined&&!e.foe&&!e.ally&&e.x===x&&e.y===y;});if(spider)return {kind:'hungry-spider',spider:spider};
+  var merchant=ents.find(function(e){return e.hp>0&&e.merchantRoom!==undefined&&e.x===x&&e.y===y;}),stall=propAt(x,y);if(merchant||stall&&stall.merchantId!==undefined)return {kind:'merchant',merchant:merchant?merchant.merchantRoom:stall.merchantId};
   var t=at(x,y);
   if(x===player.x && y===player.y){
     if(items.some(function(it){ return it.x===x && it.y===y && it.kind!=='heart' && it.kind!=='managlobe'; })) return {kind:'grab'};
@@ -68,6 +70,7 @@ function clickIntent(x, y){
   var restorationForge=typeof FoteUnmakerEncounter!=='undefined'&&FoteUnmakerEncounter.forgeInfo(x,y);
   if(restorationForge)return {kind:restorationForge.ready?'use':'inspect',restorationForge:restorationForge};
   if(lever) return {kind:lever.used?'inspect':'use',lever:pr};
+  if(pr&&pr.br&&!pr.hoard&&player.range>1&&dist(player,pr)>1)return {kind:'shoot',prop:pr};
   if(pr && pr.br && !pr.hoard) return {kind:'break'};
   if(t===EXIT) return {kind: floorMeta.exitOpen ? 'exit' : 'use'};
   if(t===DOOR || t===OPEN || t===LOCKED || t===SEALED || t===ICEDOOR || t===THORNS || t===TOLL) return {kind:'door'};
@@ -150,9 +153,15 @@ function travelStateChanged(){window.dispatchEvent(new CustomEvent('fote:travel-
 function syncExploreButton(button){
   if(!button)return;
   var active=autoExploreActive(),stairs=!!(floorMeta&&floorMeta.exploreComplete);
-  button.textContent=active?'Stop':stairs?'Next floor':'Explore';
+  var label=active?'Stop':stairs?'Next floor':'Explore';
+  if(button.dataset.iconOnly==='true'){
+    var shape=active?'<rect x="7" y="7" width="10" height="10" rx="1"/>':stairs?'<path d="M4 18h5v-5h5V8h6M18 3v7m-3-3 3 3 3-3"/>':'<circle cx="12" cy="12" r="8"/><path d="m15 9-2 4-4 2 2-4z"/>';
+    button.innerHTML='<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'+shape+'</svg>';
+  }else button.textContent=label;
+  button.setAttribute('aria-label',label);
   button.dataset.exploreMode=stairs?'stairs':'explore';button.setAttribute('aria-pressed',String(active));
-  button.title=(active?'Stop travelling':stairs?'Walk to the stairs down and descend':'Explore nearby unseen areas')+(typeof bindKey==='function'?' ('+keyLabel(bindKey('explore'))+')':'');
+  if(button._hudResourceCard)button.removeAttribute('title');
+  else button.title=(active?'Stop travelling':stairs?'Walk to the stairs down and descend':'Explore nearby unseen areas')+(typeof bindKey==='function'?' ('+keyLabel(bindKey('explore'))+')':'');
 }
 function bindExploreButton(button){
   if(!button||button.dataset.autoExplore)return;
@@ -296,6 +305,12 @@ function handleMapClick(ev){
     }
     return true;
   }
+  if(it.kind==='hungry-spider'){if(dist(player,p)<=1)interactHungrySpider(it.spider);else startTravel(travelPath(p.x,p.y,true),function(){if(dist(player,p)<=1)interactHungrySpider(it.spider);});return true;}
+  if(it.kind==='merchant'){
+    if(dist(player,p)<=1){openCavernMerchant(it.merchant);return true;}
+    var approaches=[];for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){if(!dx&&!dy)continue;var x=p.x+dx,y=p.y+dy;if(!knownTile(x,y)||!travelWalkable(x,y))continue;var route=travelPath(x,y,false);if(route)approaches.push(route);}
+    approaches.sort(function(a,b){return a.length-b.length;});if(approaches.length)startTravel(approaches[0],function(){if(dist(player,p)<=1)openCavernMerchant(it.merchant);});return true;
+  }
   if(it.lever){
     var nearLever=function(){return Math.max(Math.abs(p.x-player.x),Math.abs(p.y-player.y))===1;};
     var pullLever=function(){
@@ -305,6 +320,7 @@ function handleMapClick(ev){
     return true;
   }
   if(it.kind==='cast'){castClickSpell(it.foe,p);return true;}
+  if(it.kind==='shoot'&&it.prop){shootProp(it.prop);return true;}
   if(it.kind==='shoot') return false;            /* the game's own click shoots */
   if(it.kind==='close'){ closeDoorAt(p.x, p.y); return true; }
   if(it.kind==='break'){
@@ -330,7 +346,10 @@ function handleMapClick(ev){
 setTimeout(function(){   /* registered after boot.js, so its door-closing click still comes first */
   window.addEventListener('click', function(ev){
     if(TRAVEL&&!(ev.target.closest&&ev.target.closest('[data-auto-explore]')))stopTravel();
-    if(ev.target!==cv || aiming || uiOpen() || !player || (RUN && RUN.over)) return;
+    if(ev.target!==cv || !player)return;
+    var selected=tileAt(ev);
+    if(!inb(selected.x,selected.y)){ev.stopImmediatePropagation();ev.preventDefault();return;}
+    if(aiming || uiOpen() || (RUN && RUN.over)) return;
     if(handleMapClick(ev)){ ev.stopImmediatePropagation(); ev.preventDefault(); updateUI(); }
   }, true);
   /* any key or a click elsewhere stops a walk */

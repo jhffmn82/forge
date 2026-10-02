@@ -59,6 +59,13 @@ var renderLightSources=FoteRendering.sequence([
   renderPass('stormward',addStormwardLight),renderPass('underdark-strength-and-lava',addUnderdarkLights)
 ]);
 function drawPropSurface(p,x,y,alpha){
+  if(p.fluid){
+    var barrel=objArt('props','barrel');
+    if(barrel){drawObj(barrel,x,y,{feet:true,fit:.9,alpha:alpha});
+      ctx.save();ctx.globalAlpha=alpha;ctx.fillStyle=p.fluid==='water'?'#54BDF0':'#A6D94F';
+      ctx.fillRect(x+TS*.32,y+TS*.48,TS*.36,TS*.09);ctx.restore();return true;}
+  }
+
   // An explicit set-piece sprite owns its appearance before any name-based
   // legacy decoration. Placement and depth remain the ordinary set renderer.
   if(p.artName)return p.set?drawSetSprite(p,alpha):false;
@@ -84,6 +91,7 @@ function gatherLights(now,position){var lights=gatherBaseLights(now,position);re
  * through packedSetArt, so only the shrine redirect has a bounded guard. */
 var renderShrineLookup=false;
 function objArt(group,name){
+  if(group==='chests'&&name==='chest-gold')name='chest-ornate';
   var art=typeof FoteChaosPreviewArt!=='undefined'?FoteChaosPreviewArt.lookup(group,name):null;
   if(!renderShrineLookup&&typeof name==='string'&&name.indexOf('shrine-')===0){
     renderShrineLookup=true;try{art=setArt(name);}finally{renderShrineLookup=false;}
@@ -179,7 +187,7 @@ function drawGrassTile(x,y,px,py,alpha,layer,now){
   return drawOrdinaryGrass(x,y,px,py,alpha,layer,now);
 }
 function drawVegSpots(now){return inDeep()?drawUnderdarkPlants(now):drawOrdinaryPlants(now);}
-function drawAutomap(){var result=drawBaseAutomap();drawAutomapLava();return result;}
+function drawAutomap(){var result=drawBaseAutomap();drawAutomapLava(result);return result;}
 function drawSideDoor(x,y,tile,px,py,alpha){
   if(drawUnderdarkDoor(x,y,tile,px,py,alpha))return true;
   if(tile===BRIDGE&&inCaverns()){drawCaveBridge(x,y,px,py,alpha);return true;}
@@ -188,6 +196,7 @@ function drawSideDoor(x,y,tile,px,py,alpha){
 
 var renderActor=FoteRendering.layered([
   {name:'actor-concealment',paint:function(job){if(actorConcealed(job.entity))return true;}},
+  {name:'glacial-tomb',enter:prepareTombActor},
   {name:'underdark-pose',enter:prepareUnderdarkActor},
   {name:'maw-and-eels',enter:prepareMawActor,paint:drawCavernActor},
   {name:'large-creature',paint:function(job){return drawLargeCreature(job.entity,job.x,job.y,job.options)?true:undefined;}},
@@ -256,8 +265,8 @@ function holdFloor(){
 }
 /* The tile window the next frame will draw (drawScene's own camera, from the player's drawn position). */
 function terrainViewNow(){
-  var prp=renderPos(player);
-  return {x:Math.floor(clamp(prp.x-(viewW>>1),0,Math.max(0,MW-viewW))),y:Math.floor(clamp(prp.y-(viewH>>1),0,Math.max(0,MH-viewH))),w:viewW,h:viewH,reveal:!!revealAll};
+  var camera=sceneCameraPoint(renderPos(player));
+  return {x:Math.floor(camera.x),y:Math.floor(camera.y),w:viewW,h:viewH,reveal:!!revealAll};
 }
 function holdTerrain(changed){
   if(typeof FoteEnvironmentTerrain==='undefined'||!FoteEnvironmentTerrain.bakeView)return false;

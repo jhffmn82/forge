@@ -24,6 +24,8 @@ function performPlayerMove(dx,dy){
   if(player.st.frozen){ log('You are frozen solid.','c-info'); endTurn(); return; }
   if(player.st.stun){ log('You are stunned.','c-info'); endTurn(); return; }
   var nx=player.x+dx, ny=player.y+dy;
+  var trader=ents.find(function(e){return e.merchantRoom!==undefined&&e.hp>0&&e.x===nx&&e.y===ny;});if(trader){openCavernMerchant(trader.merchantRoom);return;}
+  var neutralSpider=ents.find(function(e){return e.hungrySpiderRoom!==undefined&&!e.foe&&!e.ally&&e.hp>0&&e.x===nx&&e.y===ny;});if(neutralSpider){interactHungrySpider(neutralSpider);return;}
   var foe=foeAt(nx,ny);
   if(foe){
     attack(player, foe);
@@ -95,10 +97,15 @@ function closeAdjacentDoors(){
 function entryItemsAndTerrain(){
   var here=items.filter(function(it){ return it.x===player.x && it.y===player.y; });
   here.forEach(function(it){
-    if(it.kind==='essence'){ removeItem(it); gainEssence(it.n); floatText(player.x,player.y,'+'+it.n,'magic'); log('Picked up '+it.n+' essence.','c-good'); sfx('pickup-essence',{vol:0.5}); }
-    else if(it.kind==='mote'){ removeItem(it); player.motes[it.el]=(player.motes[it.el]||0)+1; log('Picked up '+(/^[aeiou]/.test(it.el)?'an':'a')+' <b>'+it.el+' mote</b>.','c-kill'); sfx('pickup-mote'); sparkleFx(player.x,player.y,TRAIL_EL(it.el),16); }
-    else if(it.kind==='key'){ removeItem(it); player.keys[it.key]=(player.keys[it.key]||0)+1; log('Picked up the <b>'+it.key+' key</b>. It fits a door on this floor.','c-kill'); sfx('pickup-key'); }
-    else log('You see <b>'+itemLabel(it)+'</b> here.'+((it.kind==='heart'||it.kind==='managlobe') ? ' <span class="roll">(it waits until you need it)</span>' : ' <span class="roll">(g to pick up)</span>'),'c-info');
+    if(items.indexOf(it)<0)return;
+    var collected=false;
+    if(it.kind==='essence'){ removeItem(it); gainEssence(it.n); floatText(player.x,player.y,'+'+it.n,'magic'); log('Picked up '+it.n+' essence.','c-good'); sfx('pickup-essence',{vol:0.5}); collected=true; }
+    else if(it.kind==='mote'){ removeItem(it); player.motes[it.el]=(player.motes[it.el]||0)+1; log('Picked up <b>'+it.el+' mote</b>.','c-kill'); sfx('pickup-mote'); sparkleFx(player.x,player.y,TRAIL_EL(it.el),16); collected=true; }
+    else if(it.kind==='key'){ removeItem(it); player.keys[it.key]=(player.keys[it.key]||0)+1; log('Picked up <b>'+it.key+' key</b>.','c-kill'); sfx('pickup-key'); collected=true; }
+    else if(it.kind==='heart')log('<b>Heart</b>: +25% max HP when needed.','c-info');
+    else if(it.kind==='managlobe')log('<b>Mana globe</b>: +25% max Mana when needed.','c-info');
+    else log('<b>'+itemLabel(it)+'</b> · G to pick up.','c-info');
+    if(collected&&it.crystal)claimCrystalVaultTreasure(it);
   });
   if(!(player.levitate>0)){
     var tr=feats.filter(function(f){ return f.x===player.x && f.y===player.y; })[0];
@@ -106,11 +113,54 @@ function entryItemsAndTerrain(){
   }
   if(plates) pressPlateAt(player.x,player.y,player);
   var t=at(player.x,player.y);
-  if(t===STAIRS&&!(typeof FoteChaosCampaign!=='undefined'&&FoteChaosCampaign.entryHint())) log('Stairs down to floor '+(floorNo+1)+'. '+(document.body.classList.contains('touch') ? 'Tap them to descend.' : 'Press <b>&gt;</b> or click them to descend.'),'c-kill');
+  if(t===STAIRS&&!(typeof FoteChaosCampaign!=='undefined'&&FoteChaosCampaign.entryHint())) log('Down to floor '+(floorNo+1)+': '+(document.body.classList.contains('touch') ? 'tap stairs.' : '<b>&gt;</b> or click.'),'c-kill');
   if(t===EXIT && floorMeta.exitOpen){ if(floorNo<LAST_FLOOR) descend(); else victory(); }
   if(t===CHASM && !(player.levitate>0)) fallIntoChasm();
 }
 function removeItem(it){ var i=items.indexOf(it); if(i>=0) items.splice(i,1); }
+/* A fall changes floors, not kill credit. RUN carries waiting arrivals through saves. */
+function fallEnemyToNextFloor(e){
+  if(!RUN||!e||e===player||!e.foe||e.ally||e.hp<=0||!ents.includes(e)||
+    e.base&&e.base.boss||e.caveBoss||e.parent||gameEffects.airborne(e)||floorNo>=LAST_FLOOR)return false;
+  var destination=floorNo+1,waiting=RUN.fallenEnemies||(RUN.fallenEnemies={});
+  (waiting[destination]||(waiting[destination]=[])).push({entity:e,turn:turn,clock:worldNow()});
+  ents=ents.filter(function(other){return other!==e;});
+  // Floor keys must stay with the vault they open.
+  if(e.keyholder){
+    var keySpot=coreDropSpot(e);items.push({x:keySpot.x,y:keySpot.y,kind:'key',key:'iron'});
+    e.keyholder=false;e.name=e.name.replace(/ \(key holder\)$/,'');
+  }
+  if(e.pebbleSlam)clearPebbleSlam(e);
+  if(typeof FoteEnemyPerception!=='undefined')FoteEnemyPerception.forget(e);
+  e.state='wander';e.lastSeen=null;e.goal=null;
+  ['windup','zap','grasp','brand','erupt','channel','prisonTarget','bellGoal','guard','_lx','_ly'].forEach(function(key){delete e[key];});
+  return true;
+}
+function arriveFallenEnemies(){
+  var waiting=RUN&&RUN.fallenEnemies&&RUN.fallenEnemies[floorNo];
+  if(!waiting||!waiting.length||floorMeta.plane||floorMeta.chaosEntryPreview)return;
+  var remaining=[];
+  waiting.forEach(function(fall){
+    var e=fall.entity;if(!e||e.hp<=0||ents.includes(e))return;
+    var spot=null,score=Infinity,n=entitySize(e);
+    for(var y=0;y<MH;y++)for(var x=0;x<MW;x++){
+      var room=roomAt(x,y),probe=Object.assign({},e,{x:x,y:y});
+      if(room&&(room.pocket||room.special||room.puzzle)||!actorFootprintAllowed(probe,x,y,{avoidFire:true}))continue;
+      var safe=true;
+      for(var yy=y;yy<y+n&&safe;yy++)for(var xx=x;xx<x+n;xx++){
+        if(at(xx,yy)!==FLOOR||feats.some(function(f){return f.x===xx&&f.y===yy;})){safe=false;break;}
+      }
+      var distance=Math.abs(x-e.x)+Math.abs(y-e.y);
+      if(safe&&distance<score){score=distance;spot={x:x,y:y};}
+    }
+    if(!spot){remaining.push(fall);return;}
+    FoteTransitions.resumeClocks({ents:[e],turn:fall.turn,clock:fall.clock},turn,player.t);
+    e.x=spot.x;e.y=spot.y;e.t=player.t+100;e._lx=undefined;e._ly=undefined;
+    ents.push(e);
+    betaEnemyBalance(e);
+  });
+  if(remaining.length)RUN.fallenEnemies[floorNo]=remaining;else delete RUN.fallenEnemies[floorNo];
+}
 function fallIntoChasm(){
   log('You fall!','c-you'); sfx('trap-pit');
   var d=Math.round(player.maxhp*0.15); dealDirectDamage(player,d,'phys',null,{tags:['environment','fall']});
@@ -199,7 +249,38 @@ function leverDetails(p){
     effect:p.puzzleSwitch?'shut off the room\'s guardians':'lower the bridge',
     result:p.puzzleSwitch?'The guardians are shut off.':'The bridge is already lowered.'};
 }
+function cavernMerchant(id){return rooms.find(function(r){return r.id===id&&r.merchant;});}
+function merchantAvailable(r){
+  if(!r||!r.merchant||gameTurns.busy()||player.hp<=0)return false;
+  var e=ents.find(function(e){return e.id===r.merchant.vendorId&&e.hp>0;});
+  return !!(e&&(dist(player,e)<=1||dist(player,r.merchant.stall)<=1));
+}
+function buyMerchantItem(id,index){
+  var r=cavernMerchant(id);if(!merchantAvailable(r))return false;
+  var offer=r.merchant.stock[index];if(!offer||offer.sold)return false;
+  if(player.essence<offer.price){log('You need '+offer.price+' essence.','c-info');return false;}
+  var item=clone(offer.item);
+  if(item.kind==='mote')player.motes[item.el]=(player.motes[item.el]||0)+1;
+  else{var entry=bagEntryFor(item);if(!entry||!addBag(entry[0],entry[1],entry[2]))return false;if(item.kind==='sigil')identifySigil(item.use);}
+  spendEssence(offer.price);offer.sold=true;sfx('pickup-item');updateUI();return true;
+}
+function openCavernMerchant(id){
+  var r=cavernMerchant(id);if(!merchantAvailable(r))return false;stopTravel();
+  var h='<div class="merchant-summary"><b>'+player.essence.toLocaleString()+' essence</b><span>Each item is available once.</span></div>';
+  var groups=[{name:'Equipment &amp; jewellery',accept:function(it){return !['mote','sigil'].includes(it.kind);}},{name:'Elemental motes',accept:function(it){return it.kind==='mote';}},{name:'Sigils',accept:function(it){return it.kind==='sigil';}}];
+  groups.forEach(function(group){h+='<section class="merchant-section"><h3>'+group.name+'</h3><div class="merchant-grid">';
+    r.merchant.stock.forEach(function(offer,index){var it=offer.item;if(!group.accept(it))return;
+      var name=it.kind==='ring'?'Unidentified ring':it.kind==='amulet'?'Unidentified amulet':it.kind==='mote'?cap(it.el)+' mote':it.kind==='sigil'?SIGILS[it.use].name:gearName(it.it);
+      var detail=it.kind==='weapon'?weaponCard(it.it):it.kind==='armor'?armorCard(it.it):it.kind==='off'?offhandCard(it.it):it.kind==='sigil'?actionDetailsHTML(sigilDetails(it.use)):'';
+      h+='<div class="merchant-card'+(offer.sold?' sold':'')+'"><span data-merchant-icon="'+index+'"></span><b class="merchant-name">'+name+'</b><span class="merchant-price">'+offer.price.toLocaleString()+'<small>essence</small></span><button data-merchant-buy="'+index+'" '+(offer.sold||player.essence<offer.price?'disabled':'')+'>'+(offer.sold?'Sold':'Buy')+'</button>'+(detail?'<details data-merchant-details="'+index+'"><summary>Details</summary>'+detail+'</details>':'')+'</div>';
+    });h+='</div></section>';
+  });
+  openModal('Myconid merchant',h,[{label:'Leave',fn:closeModal}],'wide');
+  $('mBody').querySelectorAll('[data-merchant-icon]').forEach(function(span){var item=r.merchant.stock[Number(span.dataset.merchantIcon)].item;span.appendChild(iconCanvas(itemArtName(item),30));});
+  $('mBody').querySelectorAll('[data-merchant-buy]').forEach(function(button){button.onclick=function(){var body=$('mBody'),scroll=body.scrollTop,opened=Array.from(body.querySelectorAll('details[open]')).map(function(d){return d.dataset.merchantDetails;});if(buyMerchantItem(id,Number(button.dataset.merchantBuy))){openCavernMerchant(id);opened.forEach(function(index){var d=$('mBody').querySelector('[data-merchant-details="'+index+'"]');if(d)d.open=true;});$('mBody').scrollTop=scroll;}};});return true;
+}
 function bumpProp(p){
+  if(p.merchantId!==undefined){openCavernMerchant(p.merchantId);return true;}
   if(typeof FoteUnmakerEncounter!=='undefined'&&FoteUnmakerEncounter.forgeInfo(p.x,p.y)){
     FoteUnmakerEncounter.interactForge(p.x,p.y);return true;
   }
@@ -225,21 +306,117 @@ function bumpProp(p){
   if(p.tablet){ log('The broken tablet reads: <b>first the '+plates.order[0]+', then the '+plates.order[1]+', last the '+plates.order[2]+'</b>.','c-kill'); return true; }
   if(p.altar){ return sacrifice(p); }
   if(p.prisoner){
-    var kind=p.prisoner; p.prisoner=null;
+    var kind=p.prisoner;
     var c=nearFree(p.x,p.y,1)||nearFree(player.x,player.y,2); if(!c) return true;
-    var m=spawn(kind,c.x,c.y);
-    if(rng()<0.55){ m.foe=false; m.ally=true; m.state='ally'; m.t=player.t; m.name='Freed '+m.name; log('The prisoner staggers out and swears to fight beside you until you leave this floor.','c-good'); }
+    p.prisoner=null;
+    var m=spawn(kind,c.x,c.y,{skipDeep:!!p.ritual});
+    if(p.ritual){var room=roomAt(p.x,p.y);if(room&&room.ritual){room.ritual.finished=true;room.ritual.outcome='rescued';}}
+    var outcome=p.prisonerOutcome||pick(['fighter','escapee','hostile']);
+    if(outcome==='escapee'&&prisonExit()){makeEscapee(m,p);}
+    else if(outcome!=='hostile'){ m.foe=false; m.ally=true; m.state='ally'; m.t=player.t; m.name='Freed '+m.name; log('The prisoner says: &quot;You freed me. I will fight beside you.&quot;','c-good'); }
     else { m.state='hunt'; log('The prisoner lunges at you!','c-you'); }
     sfx('door-open'); endTurn(); return true;
   }
-  if(p.drink){ var before=player.hp; healPlayer(Math.round(player.maxhp*0.1)); p.drink=false; log('Fountain: +'+Math.round((player.hp-before)*10)/10+' HP.','c-good'); sfx('step-water'); endTurn(); return true; }
+  if(p.drink){ var before=player.hp; healPlayer(Math.round(player.maxhp*0.1)); p.drink=false; log('Fountain: +'+Math.round(player.hp-before)+' HP.','c-good'); sfx('step-water'); endTurn(); return true; }
   if(p.br){ setClip(player,'melee'); lungeFx(player,p.x,p.y); damageProp(p, player, 'phys'); endTurn(); return true; }
   if(p.b){ log('Something is in the way.','c-info'); return true; }
   return false;
 }
+function prisonExit(){
+  var exits=[];for(var i=0;i<map.length;i++)if(map[i]===UPSTAIRS||map[i]===EXIT)exits.push({x:i%MW,y:Math.floor(i/MW)});
+  return exits.find(function(c){return at(c.x,c.y)===UPSTAIRS;})||exits[0]||null;
+}
+function makeEscapee(e,cage){
+  e.foe=false;e.ally=true;e.state='ally';e.t=player.t;e.escapee=true;
+  e.maxhp=Math.max(1,Math.floor(e.maxhp/2));e.hp=cage.ritual?Math.max(1,Math.ceil(e.maxhp*cage.captiveHp/cage.captiveMaxhp)):e.maxhp;
+  e.base=Object.assign({},e.base,{armor:(e.base.armor||0)/2,eva:(e.base.eva||0)/2});
+  e.name='Escaping '+e.name;e.escapeExit=prisonExit();
+  log('Escort the prisoner to the '+(at(e.escapeExit.x,e.escapeExit.y)===UPSTAIRS?'upstairs':'exit')+'. Reward on arrival.','c-good',{priority:'warning'});
+  if(!cage.ritual)prisonAmbush(cage);
+}
+function escapeeAct(e){
+  if(e.hp<=0||!ents.includes(e))return true;
+  var exit=e.escapeExit;
+  if(exit&&dist(e,exit)<=1&&dist(player,exit)<=3){
+    var roll=rng(),reward=roll<.34?{kind:'ring',it:makeRing(null,false)}:roll<.67?{kind:'amulet',it:makeAmulet(null,false)}:{kind:'essence',n:25+floorNo*5};
+    reward.x=e.x;reward.y=e.y;items.push(reward);ents=ents.filter(function(o){return o!==e;});
+    log('The escapee thanks you, leaves a reward and escapes.','c-good');return true;
+  }
+  if(canActorMove(e)){
+    if(exit&&dist(player,exit)<=3)actorPathStep(e,exit);
+    else allyFollowStep(e);
+  }
+  return true;
+}
+function prisonAmbush(cage){
+  var biome=bidx(),room=roomAt(cage.x,cage.y),field=new Int32Array(MW*MH).fill(-1),cells=[];
+  var q=[idxOf(cage.x,cage.y)];field[q[0]]=0;
+  for(var h=0;h<q.length;h++){var i=q[h],x=i%MW,y=Math.floor(i/MW);
+    [[1,0],[-1,0],[0,1],[0,-1]].forEach(function(d){var nx=x+d[0],ny=y+d[1],j=idxOf(nx,ny),p=propAt(nx,ny);
+      if(inb(nx,ny)&&field[j]<0&&(walkable(nx,ny)||isDoorish(at(nx,ny)))&&!(p&&p.b)){field[j]=field[i]+1;q.push(j);}
+    });
+  }
+  for(var y=1;y<MH-1;y++)for(var x=1;x<MW-1;x++){
+    var i=idxOf(x,y);if(field[i]<0||field[i]>18||field[i]<4||roomAt(x,y)===room||vis[i]||!freeCell(x,y)||at(x,y)!==FLOOR)continue;
+    var safe=true;for(var yy=y-2;yy<=y+2;yy++)for(var xx=x-2;xx<=x+2;xx++)if([UPSTAIRS,STAIRS,EXIT,PORTAL].includes(at(xx,yy)))safe=false;
+    if(safe&&!feats.some(function(f){return f.x===x&&f.y===y;}))cells.push({x:x,y:y});
+  }
+  var packs=[['goblin','archer','brute','shaman'],['bonearcher','gravebloat','acolyte','shade'],['stormbeetle','stormbeetle','myconid','myconid'],['drowblade','drowblade','drowpriestess','drowpriestess']];
+  var pack=packs[biome];if(!pack||cells.length<pack.length)return false;
+  cells.sort(function(a,b){return field[idxOf(a.x,a.y)]-field[idxOf(b.x,b.y)];});
+  pack.forEach(function(kind,n){var c=cells[n],e=spawn(kind,c.x,c.y);e.state='hunt';e.prisonTarget={x:cage.x,y:cage.y};e.t=player.t+100;});
+  if(biome===1){
+    var step=player.ghoulStep,dx=step?step.dx:Math.sign(cage.x-player.x),dy=step?step.dy:Math.sign(cage.y-player.y);
+    var back=[];for(var yy=player.y-3;yy<=player.y+3;yy++)for(var xx=player.x-3;xx<=player.x+3;xx++)
+      if((xx-player.x)*dx+(yy-player.y)*dy<0&&freeCell(xx,yy)&&at(xx,yy)===FLOOR&&field[idxOf(xx,yy)]>=0&&![UPSTAIRS,STAIRS,EXIT,PORTAL].some(function(t){return at(xx,yy)===t;}))back.push({x:xx,y:yy});
+    back=back.filter(function(c){for(var yy=c.y-2;yy<=c.y+2;yy++)for(var xx=c.x-2;xx<=c.x+2;xx++)if([UPSTAIRS,STAIRS,EXIT,PORTAL].includes(at(xx,yy)))return false;return !feats.some(function(f){return f.x===c.x&&f.y===c.y;});});
+    if(back.length){var c=back[0],g=spawn('ghoul',c.x,c.y);floorMeta.buriedGhouls=(floorMeta.buriedGhouls||[]).filter(function(o){return o!==g;});g.ghoulBuried=false;g.state='hunt';g.t=player.t+100;ents.push(g);setClip(g,'emerge');}
+  }
+  log('You hear a rescue patrol approaching the prison.','c-you');return true;
+}
+function prisonPursuit(e){
+  if(!e.prisonTarget)return false;
+  if(canSeePlayer(e)||dist(e,e.prisonTarget)<=1){delete e.prisonTarget;return false;}
+  actorPathStep(e,e.prisonTarget);return true;
+}
+
+// Fluid barrels reuse the existing water and ooze terrain, without replacing
+// doors, rewards, travel tiles or puzzle terrain.
+function spillBarrel(p){
+  if(!p||!props.includes(p))return;
+  var room=roomAt(p.x,p.y),fluid=p.fluid,flooded=[],spillPoint=[p.x,p.y];
+  removeProp(p);sfx('crate-break',{from:p});
+  floorMeta=floorMeta||{};floorMeta.ooze=floorMeta.ooze||{};
+  for(var y=0;y<MH;y++)for(var x=0;x<MW;x++){
+    var i=idxOf(x,y),t=at(x,y);
+    if(t!==FLOOR&&t!==WATER)continue;
+    if(fluid==='water'){
+      if(room?roomAt(x,y)!==room:Math.max(Math.abs(x-p.x),Math.abs(y-p.y))>1)continue;
+      setT(x,y,WATER);if(gAt(x,y)!==G_TELL)setG(x,y,0);fireT[i]=0;fireSrc[i]=0;delete floorMeta.ooze[i];flooded.push([x,y]);
+    }else{
+      if(Math.max(Math.abs(x-p.x),Math.abs(y-p.y))>1||t===WATER)continue;
+      if(room&&roomAt(x,y)!==room)continue;
+      if(room&&room.storageAisle&&room.storageAisle.includes(i))continue;
+      var safe=true;
+      for(var yy=y-3;yy<=y+3;yy++)for(var xx=x-3;xx<=x+3;xx++)
+        if([STAIRS,UPSTAIRS,EXIT,PORTAL,FORGE,SHRINE].includes(at(xx,yy)))safe=false;
+      if(safe)floorMeta.ooze[i]=1;
+    }
+  }
+  if(typeof puzzleSpellTiles==='function')puzzleSpellTiles(fluid==='water'?{el:'water'}:{type:'poison'},fluid==='water'?flooded:[spillPoint]);
+  if(typeof SURF_CACHE!=='undefined')SURF_CACHE.key=null;
+  log(fluid==='water'?'Water spills across the room.':'The barrel spills a poison pool.','c-info');
+}
+/* Damaging spells share prop reactions; frozen treasure still requires fire. */
+function spellPropHit(x,y,type){
+  var p=propAt(x,y);
+  if(!p||!p.br||p.hoard&&type!=='fire')return false;
+  damageProp(p,'player',type);return true;
+}
 function damageProp(p, src, type){
   if(p&&p.curtain)return cutWebCurtain(p,src,type);
   if(p&&p.bush)return cutBushProp(p,src,type);
+  if(p.fluid){spillBarrel(p);return;}
   if(p.ex){ explode(p.x,p.y,src); return; }
   if(p.melt && (type==='fire')){ removeProp(p); log('The ice melts away.','c-info'); sfx('ice-melt',{from:p}); return; }
   if(!p.br) return;
@@ -250,18 +427,20 @@ function damageProp(p, src, type){
   }
 }
 function explode(x,y,src){
+  var blastTiles=[];
   var p=propAt(x,y); if(p) removeProp(p);
   log('<b>BOOM!</b> The powder barrel explodes.','c-you'); sfx('explosion',{from:{x:x,y:y}}); explosionFx(x,y);
   for(var dy=-1;dy<=1;dy++) for(var dx=-1;dx<=1;dx++){
-    var tx=x+dx, ty=y+dy; if(!inb(tx,ty)) continue;
+    var tx=x+dx, ty=y+dy; if(!inb(tx,ty)) continue;blastTiles.push([tx,ty]);
     ents.slice().forEach(function(e){ if(e.x===tx && e.y===ty){ var d=applyDamage(e, roll(8,14)+floorNo, 'fire', null); floatText(tx,ty,String(d),'fire'); applyStatus(e,'burn',3,sDMG(2));
       if(e.hp<=0){ if(e===player){  if(player.hp<=0) death(); } else kill(e, src==='player'||src===player ? 'player' : null); } } });
     var q=propAt(tx,ty);
-    if(q && (dx||dy)){ if(q.ex) setTimeout(function(qx,qy){ return function(){ if(propAt(qx,qy)) { explode(qx,qy,src); draw(); } }; }(tx,ty), 180); else if(q.br||q.burn) { removeProp(q); setG(tx,ty,G_ASH); } }
+    if(q && (dx||dy)){ if(q.ex) setTimeout(function(qx,qy){ return function(){ if(propAt(qx,qy)) { explode(qx,qy,src); draw(); } }; }(tx,ty), 180); else if(q.fluid){spillBarrel(q);} else if(q.br||q.burn) { removeProp(q); setG(tx,ty,G_ASH); } }
     if(at(tx,ty)===FLOOR && !gAt(tx,ty)) setG(tx,ty,G_SCORCH);
     ignite(tx,ty,src);
     burnWorld(tx,ty);
   }
+  if(typeof puzzleSpellTiles==='function')puzzleSpellTiles({el:'fire',type:'fire'},blastTiles);
 }
 function sacrifice(p){
   var a=altars[idxOf(p.x,p.y)]||(altars[idxOf(p.x,p.y)]={passes:0});
@@ -300,7 +479,7 @@ var fireSrc = new Uint8Array(64*40);
 function burnWorld(x,y){
   if(typeof FoteEnemyFields!=='undefined')FoteEnemyFields.burn(x,y);
   var puzzle=puzzleAtDoor(x,y);
-  if(puzzle&&puzzle.puzzle.kind==='barricade'&&!puzzle.puzzle.solved)solvePuzzle(puzzle,'the timber burns away.');
+  if(puzzle&&puzzle.puzzle.kind==='barricade'&&!puzzle.burning&&!puzzle.puzzle.solved)solvePuzzle(puzzle,'the timber burns away.');
   var t=at(x,y);
   if(t===ICEDOOR){ setT(x,y,OPEN); log('The ice sealing the door melts away in a cloud of steam.','c-kill'); sfx('ice-melt',{from:{x:x,y:y}}); burst(x,y,'ice',24,0.06); computeFOV(); }
   if(t===THORNS){ setT(x,y,OPEN); fireT[idxOf(x,y)]=3; log('The thorns catch and burn away.','c-kill'); sfx('thorns-burn',{from:{x:x,y:y}}); computeFOV(); }
@@ -317,7 +496,7 @@ function fireTick(){
     fireT[i]--;
     var p=propAt(x,y);
     if(fireT[i]===0){
-      if(p && p.burn && !p.ex){ removeProp(p); }
+      if(p && p.burn && !p.ex){ if(p.fluid)spillBarrel(p);else removeProp(p); }
       var g=ground[i]; if(g===G_GRASS||g===G_SHORT||g===G_WEB||!g) ground[i] = (g? G_ASH : G_SCORCH);
       continue;
     }
@@ -398,7 +577,12 @@ function triggerTrap(tr,e){
     tell('You are whisked away by a teleport rune!', who+' is whisked away by a teleport rune!'); }
   else if(tr.kind==='pit'){
     if(isP){ log('The floor gives way!','c-you'); fallIntoChasm(); }
-    else { trapNews(tr, 'The '+e.name+' falls into a pit!'); trapKill(); }
+    else {
+      if(!fallEnemyToNextFloor(e))return;
+      trapNews(tr,e.name+' falls to the next floor.');
+      if(info.once)feats=feats.filter(function(f){return f!==tr;});
+      return;
+    }
   }
   if(info.once) feats=feats.filter(function(f){ return f!==tr; });
   if(e.hp<=0){ if(isP){  if(player.hp<=0) death(); } else trapKill(); }
@@ -429,7 +613,7 @@ function openChest(x,y){
   setT(x,y,FLOOR); sfx('chest-open'); sparkleFx(x,y,'light',14);
   addProp(x,y,'chest-wood-open',{flat:false, b:false, openChest:true});
   var rich = kind==='chest-ornate' || kind==='chest-crystal' || kind==='chest-elemental';
-  var n = rich ? 3 : 1 + (rng()<0.5?1:0);
+  var n = rich ? 3 : kind==='chest-gold' ? 2 : 1 + (rng()<0.5?1:0);
   for(var i=0;i<n;i++){
     var r=rng(), it;
     if(kind==='crate-supply') it = r<0.35 ? {kind:'food', food:randomFood()} : r<0.6 ? {kind:'sigil', use:randomSigilUse()} : {kind:'essence', n:ri(10,22)+floorNo*3};
@@ -437,10 +621,12 @@ function openChest(x,y){
     else if(r<0.64) it={kind:'essence', n:ri(10,22)+floorNo*3};
     else if(r<0.70) it={kind:'sigil', use:randomSigilUse()};
     else it=randomGear();
+    if(kind==='chest-gold'&&it.kind==='essence')it.n=Math.ceil(it.n*1.25);
     var c = i===0 ? {x:player.x,y:player.y} : (nearFree(x,y,1)||{x:player.x,y:player.y});
     it.x=c.x; it.y=c.y; items.push(it);
   }
   log('The chest holds '+n+' thing'+(n>1?'s':'')+'.','c-kill');
+  releaseChestAmbush(x,y);
   stepOn();
 }
 
@@ -458,7 +644,7 @@ function identifySigil(use){
   if(sigilKnown[use]) return;
   sigilKnown[use]=true;
   player.bag.forEach(function(b){ if(b.kind==='sigil' && b.data.use===use) b.name=SIGILS[use].name; });
-  log('It was a <b>'+SIGILS[use].name+'</b>: '+SIGILS[use].desc,'c-kill'); sfx('identify');
+  log('It was a <b>'+SIGILS[use].name+'</b>: '+actionDetailsText(sigilDetails(use)),'c-kill'); sfx('identify');
 }
 
 
@@ -469,14 +655,35 @@ function grab(){
   if(gameTurns.busy())return false;
   var got=false;
   items.filter(function(it){ return it.x===player.x && it.y===player.y; }).forEach(function(it){
+    if(items.indexOf(it)<0)return;
+    if(it.rareLamp!==undefined){if(releaseSealedLamp(it))got=true;return;}
     var e=bagEntryFor(it); if(!e) return;
-    if(addBag(e[0],e[1],e[2])){ removeItem(it); got=true; log('You pick up <b>'+itemLabel(it)+'</b>.','c-good'); sfx('pickup-item'); }
+    if(addBag(e[0],e[1],e[2])){ removeItem(it); got=true; log('You pick up <b>'+itemLabel(it)+'</b>.','c-good'); sfx('pickup-item'); if(it.crystal)claimCrystalVaultTreasure(it); }
   });
   if(!got) log('Nothing here to pick up.','c-info');
   return got;
 }
 function consume(idx){ var it=player.bag[idx]; if(it.n>1) it.n--; else player.bag.splice(idx,1); }
 
+
+function propProjectilePath(ax,ay,bx,by){
+  var path=boltPath(ax,ay,bx,by);
+  for(var i=0;i<path.length;i++){var blocker=propAt(path[i].x,path[i].y);if(blocker&&blocker.b)return path.slice(0,i+1);}
+  return path;
+}
+function shootProp(p){
+  if(gameTurns.busy()||playerFearAction())return false;
+  if(!p||propAt(p.x,p.y)!==p||!p.br||p.hoard)return false;
+  if(!(revealAll||vis[idxOf(p.x,p.y)])){log('You cannot see that tile.','c-info');return false;}
+  var weapon=isRangedWeapon(player.ranged)?player.ranged:player.weapon;
+  if(!isRangedWeapon(weapon)||dist(player,p)>player.range){log('Out of range.','c-info');return false;}
+  var path=propProjectilePath(player.x,player.y,p.x,p.y),end=path[path.length-1];
+  if(!end||end.x!==p.x||end.y!==p.y){log('Something is in the way.','c-info');return false;}
+  setClip(player,'ranged');boltFx(player.x,player.y,p.x,p.y,'phys',{arrow:true,silentHit:true});
+  sfx('bow-shot',{at:Math.max(performance.now(),fxClock),from:player});
+  player.lastAttack=true;player.lastAttackMelee=false;player.hidden=0;
+  damageProp(p,player,'phys');endTurn();return true;
+}
 
 function shootAt(e,preferred){
   if(!e)return false;
@@ -512,6 +719,7 @@ function generateNextFloor(fell){
   if(!fell) sfx('stairs');
   player.levitate=0; aiming=null;
   generate(worldSeed);
+  arriveFallenEnemies();
   if(typeof FoteShadowClone!=='undefined')FoteShadowClone.arrive();
   player._lx=undefined;
   resize();
@@ -527,6 +735,7 @@ function wanderingSpawn(){
   if(spawnedExtra >= 3 + floorNo || alive >= Math.round((10 + floorNo*2)*0.8)) return;
   var spots=[];
   for(var y=0;y<MH;y++) for(var x=0;x<MW;x++){
+    var room=roomAt(x,y);if(room&&(room.hiddenSigil||room.rareEvent))continue;
     if(!walkable(x,y) || vis[idxOf(x,y)] || dist(player,{x:x,y:y}) < 14 || occupied(x,y)) continue;
     spots.push({x:x,y:y});
   }

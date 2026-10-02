@@ -30,15 +30,15 @@ function anyObj(name){
   for(var i=0;i<groups.length;i++){ var o=objArt(groups[i],name); if(o) return o; }
   return null;
 }
-/* white silhouettes of sheet frames, for hit flashes and the foe halo. 2026-09-27: the cache never evicted (16.8 MiB in
+/* Cached silhouettes for hit flashes and sprite edges. 2026-09-27: the cache never evicted (16.8 MiB in
    5.5 s of goblin idle frames); it now keeps the 128 most recently drawn. */
 var WHITE_CACHE=new Map(), WHITE_CACHE_MAX=128;
-function whiteCut(img, sx,sy,sw,sh){
-  var key=img.src+'|'+sx+','+sy+','+sw+','+sh, c=WHITE_CACHE.get(key);
+function whiteCut(img, sx,sy,sw,sh,color){
+  var key=img.src+'|'+sx+','+sy+','+sw+','+sh+'|'+(color||'#fff'), c=WHITE_CACHE.get(key);
   if(c){ WHITE_CACHE.delete(key); WHITE_CACHE.set(key,c); return c; }
   c=document.createElement('canvas'); c.width=sw; c.height=sh;
   var g=c.getContext('2d'); g.drawImage(img,sx,sy,sw,sh,0,0,sw,sh);
-  g.globalCompositeOperation='source-in'; g.fillStyle='#fff'; g.fillRect(0,0,sw,sh);
+  g.globalCompositeOperation='source-in'; g.fillStyle=color||'#fff'; g.fillRect(0,0,sw,sh);
   WHITE_CACHE.set(key,c); if(WHITE_CACHE.size>WHITE_CACHE_MAX) WHITE_CACHE.delete(WHITE_CACHE.keys().next().value);
   return c;
 }
@@ -514,9 +514,9 @@ function castSheet(look){
    carry their own dark edge, so the pale foe halo is for the older sheets only. A new atlas says which way its art faces,
    or is Chaos art. */
 function paintedSheet(sheet){ return !!(sheet && sheet.m && (sheet.m.facing || sheet.m.chaos)); }
-/* Sampling belongs to the authored sheet, shared by living actors and corpses.
- * Small native pixel sheets can opt out of a second softening pass at map scale. */
-function spriteSheetSmoothing(sheet){ return !(sheet && sheet.m && sheet.m.sampling==='nearest'); }
+/* Preserve native pixels when enlarged, but filter every sheet when reduced.
+ * Skipping that reduction made small outlines stair-step and lose detail. */
+function spriteSheetSmoothing(sheet,scale){ return scale<1 || !(sheet && sheet.m && sheet.m.sampling==='nearest'); }
 function mobSheet(name){ var preview=typeof FoteChaosEnemyArt!=='undefined'&&FoteChaosEnemyArt.sheet(name);if(preview)return preview;var m=AS.mobs && AS.mobs[name]; if(!m) return null; var img=atl('mob-'+name+'.webp'); return img ? {img:img, m:m} : null; }
 /* Share artwork without granting temporary swarms the raised-shade gameplay tag. */
 function isShadeSummon(e){return !!(e && e.ally && (e.shade || e.swarm));}
@@ -550,9 +550,6 @@ function clipFrame(sheet, e, sliding){
   /* 2026-09-19: Justin - a sleeping creature kept playing its idle (the Myconid swayed about with a Z over it).
      Asleep it holds its still pose until something wakes it. */
   if(e.state==='asleep'){ var sr=m.static_row!==undefined ? m.static_row : (m.clips.idle?m.clips.idle.row:0); return {sx:0, sy:sr*cell}; }
-  /* The Myconid's supplied idle row changes foot positions like a run. Its
-     planted pose breathes below; attack and hurt clips still take precedence. The Worm Tender is its recolour. */
-  if(e.base && (e.base.sprite==='m-myconid'||e.base.sprite==='m-worm-tender') && !sliding && m.static_row!==undefined)return {sx:0,sy:m.static_row*cell};
   if(sliding && m.clips.walk){ var w=m.clips.walk; return {sx:(Math.floor(now/CLIP_MS.walk)%w.frames)*cell, sy:w.row*cell}; }
   if(m.clips.idle){ var id=m.clips.idle, ph=((e.id||0)*97)%500; return {sx:(Math.floor((now+ph)/CLIP_MS.idle)%id.frames)*cell, sy:id.row*cell}; }
   return {sx:0, sy:(m.static_row||0)*cell};
@@ -567,8 +564,10 @@ function drawCharacterSprite(e, px, py, opts){
       var fr=clipFrame(cs, e, opts.sliding), m=cs.m, cell=m.cell, sc=(TS*1.08)/m.stand;
       var w=cell*sc, h=cell*sc, dx=px+TS/2-w/2, dy=py+TS-(cell-m.foot)*sc;
       var rect=placementRect(dx,dy,w,h);dx=rect.x;dy=rect.y;w=rect.w;h=rect.h;
-      ctx.save(); ctx.globalAlpha=(opts.alpha===undefined?1:opts.alpha)*(e.shadowClone?.58:1); ctx.imageSmoothingEnabled=true;
-      if(e.shadowClone)ctx.filter='grayscale(1) brightness(.42) sepia(.6) hue-rotate(205deg) saturate(1.5)';
+      // Keep the copied hands readable on dark floors: the former .42 brightness
+      // combined with .58 opacity buried small weapons inside the silhouette.
+      ctx.save(); ctx.globalAlpha=(opts.alpha===undefined?1:opts.alpha)*(e.shadowClone?.72:1); ctx.imageSmoothingEnabled=true;
+      if(e.shadowClone)ctx.filter='grayscale(1) brightness(.78) sepia(.6) hue-rotate(205deg) saturate(1.5)';
       if(opts.flip){ ctx.translate(px+TS/2,0); ctx.scale(-1,1); ctx.translate(-(px+TS/2),0); }
       if(typeof drawCastLayers==='function') drawCastLayers(e, cs, fr, dx, dy, w, h); else ctx.drawImage(cs.img, fr.sx, fr.sy, cell, cell, dx, dy, w, h);
       if(opts.flash>0){ ctx.globalAlpha*=opts.flash; ctx.drawImage(whiteCut(cs.img,fr.sx,fr.sy,cell,cell), dx,dy,w,h); }
@@ -584,9 +583,10 @@ function drawCharacterSprite(e, px, py, opts){
     var target=TS*(visualBase.art||0.9)*(e.big&&!isShade?1.25:1), s2=target/Math.max(box[3], box[2]*0.8);
     var w2=c2*s2, h2=c2*s2, feet=(box[1]+box[3]);
     var dx2=px+TS/2-(box[0]+box[2]/2)*s2, dy2=py+TS*0.97-feet*s2;
-    /* Tier-two reference art has a single pose: give it a restrained breath,
-       attack compression and recoil without altering simulation state. */
-    if((visualBase.elementTier || visualBase.stillPose || visualBase.sprite==='m-myconid' || visualBase.sprite==='m-worm-tender') && !ANIM.reduce && e.state!=='asleep'){
+    /* Only legacy single-pose sheets need this fallback. Authored clips already
+       contain their own breathing and attack motion. */
+    var authoredMotion=Object.keys(mm.clips||{}).some(function(name){return mm.clips[name].frames>1;});
+    if(!authoredMotion && (visualBase.elementTier || visualBase.stillPose) && !ANIM.reduce && e.state!=='asleep'){
       var msNow=performance.now(), age2=e._clip?msNow-e._clip.t0:9999;
       var action2=e._clip&&e._clip.name==='attack'&&age2>=0&&age2<540?Math.sin(age2/540*Math.PI):0;
       var pulse2=Math.sin(msNow/330+(e.id||0))*.012;
@@ -596,12 +596,14 @@ function drawCharacterSprite(e, px, py, opts){
     }
     var rect2=placementRect(dx2,dy2,w2,h2);dx2=rect2.x;dy2=rect2.y;w2=rect2.w;h2=rect2.h;
     var actorAlpha=(opts.alpha===undefined?1:opts.alpha)*(isShade ? .62 : 1);
-    ctx.save(); ctx.globalAlpha=actorAlpha; ctx.imageSmoothingEnabled=spriteSheetSmoothing(ms);
+    ctx.save(); ctx.globalAlpha=actorAlpha; ctx.imageSmoothingEnabled=spriteSheetSmoothing(ms,Math.min(w2,h2)/c2);
     if(opts.flip){ ctx.translate(px+TS/2,0); ctx.scale(-1,1); ctx.translate(-(px+TS/2),0); }
-    if(opts.outline && !paintedSheet(ms)){
-      var cut2=whiteCut(ms.img,f2.sx,f2.sy,c2,c2),edge2=Math.max(1,Math.round(TS/40));
-      ctx.globalAlpha=actorAlpha*.11;
-      [[-edge2,0],[edge2,0],[0,-edge2],[0,edge2],[-edge2,-edge2],[edge2,-edge2],[-edge2,edge2],[edge2,edge2]].forEach(function(d){ctx.drawImage(cut2,dx2+d[0],dy2+d[1],w2,h2);});
+    if(mm.edge || (opts.outline && !paintedSheet(ms))){
+      var cut2=whiteCut(ms.img,f2.sx,f2.sy,c2,c2,mm.edge),edge2=mm.edge?Math.max(.6,s2):Math.max(1,Math.round(TS/40));
+      ctx.globalAlpha=actorAlpha*(mm.edge?.68:.11);
+      var offsets=[[-edge2,0],[edge2,0],[0,-edge2],[0,edge2]];
+      if(!mm.edge)offsets.push([-edge2,-edge2],[edge2,-edge2],[-edge2,edge2],[edge2,edge2]);
+      offsets.forEach(function(d){ctx.drawImage(cut2,dx2+d[0],dy2+d[1],w2,h2);});
       ctx.globalAlpha=actorAlpha;
     }
     ctx.drawImage(ms.img, f2.sx, f2.sy, c2, c2, dx2, dy2, w2, h2);
@@ -636,8 +638,9 @@ function drawGlobe(it, px, py, alpha, now){
 }
 
 /* how big each kind of loot is on the floor, as a share of a tile: small things stay small */
-var ITEM_FIT = {ring:0.42, amulet:0.46, essence:0.42, mote:0.42, key:0.46, sigil:0.5, food:0.52, off:0.58, armor:0.62, weapon:0.68};   /* between the old full-tile size and the too-small trim */
+var ITEM_FIT = {relic:0.5,ring:0.42, amulet:0.46, essence:0.42, mote:0.42, key:0.46, sigil:0.5, food:0.52, off:0.58, armor:0.62, weapon:0.68};   /* between the old full-tile size and the too-small trim */
 function itemArtName(it){
+  if(it.rareLamp!==undefined)return 'sealed-lamp';
   if(it.kind==='core') return it.name==='Crypt Core' ? 'item-core-crypt' : 'item-core-dungeon';
   if(it.kind==='essence') return 'item-essence';
   if(it.kind==='mote') return 'mote-'+it.el;
@@ -728,20 +731,27 @@ function gatherBaseLights(now, prp){
 
 
 /* ---- telegraphs: the floor a boss is about to hit glows red, brighter as the blow gets close ---- */
+function drawBossDangerTiles(tiles,due,now){
+  var urgent=due<=1,pulse=ANIM.reduce?0.7:0.5+0.5*Math.sin(now/(urgent?110:220));
+  ctx.save();ctx.globalCompositeOperation='source-over';ctx.setLineDash([]);
+  (tiles||[]).forEach(function(t){
+    if(!(revealAll||vis[idxOf(t[0],t[1])]))return;
+    var px=(t[0]-camX)*TS,py=(t[1]-camY)*TS;
+    ctx.fillStyle='rgba(210,40,30,'+((urgent?0.34:0.2)+0.16*pulse)+')';ctx.fillRect(px+1,py+1,TS-2,TS-2);
+    ctx.strokeStyle='rgba(255,120,90,'+(0.55+0.35*pulse)+')';ctx.lineWidth=Math.max(1.5,TS*0.05);ctx.strokeRect(px+2,py+2,TS-4,TS-4);
+  });ctx.restore();
+}
 function drawBossTelegraphs(now){
   if(typeof FoteUnmakerEncounter!=='undefined')FoteUnmakerEncounter.drawTelegraphs(now);
   ents.forEach(function(e){
     if(!e.windup || !e.windup.tiles) return;
     if(e.windup.unmaker)return;
-    if(e.windup.chaos&&typeof FoteChaosEnemyArt!=='undefined')return;
+    drawBossDangerTiles(e.windup.tiles,e.windup.due,now);
     var urgent = e.windup.due<=1, pulse = ANIM.reduce ? 0.7 : 0.5+0.5*Math.sin(now/(urgent?110:220));
     ctx.save();
     e.windup.tiles.forEach(function(t){
       if(!(revealAll||vis[idxOf(t[0],t[1])])) return;
       var px=(t[0]-camX)*TS, py=(t[1]-camY)*TS;
-      ctx.globalCompositeOperation='source-over';
-      ctx.fillStyle='rgba(210,40,30,'+((urgent?0.34:0.2)+0.16*pulse)+')'; ctx.fillRect(px+1,py+1,TS-2,TS-2);
-      ctx.strokeStyle='rgba(255,120,90,'+(0.55+0.35*pulse)+')'; ctx.lineWidth=Math.max(1.5,TS*0.05); ctx.strokeRect(px+2,py+2,TS-4,TS-4);
       if(e.windup.kind==='charge'){ ctx.fillStyle='rgba(255,210,160,'+(0.5+0.4*pulse)+')'; var cx=px+TS/2, cy=py+TS/2, a=Math.atan2(player.y-e.y+0.0001, player.x-e.x); ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*TS*0.25, cy+Math.sin(a)*TS*0.25); ctx.lineTo(cx+Math.cos(a+2.4)*TS*0.18, cy+Math.sin(a+2.4)*TS*0.18); ctx.lineTo(cx+Math.cos(a-2.4)*TS*0.18, cy+Math.sin(a-2.4)*TS*0.18); ctx.closePath(); ctx.fill(); }
     });
     ctx.restore();
@@ -870,12 +880,33 @@ function groundRangeAny(test){
   for(var y=y0;y<=y1;y++) for(var x=x0;x<=x1;x++) if(test(y*W+x,x,y)) return true;
   return false;
 }
+/* Natural rock blends across cells, but an isolated unseen floor notch must stay
+ * concealed. Soften its square omission on the known side of the fog boundary;
+ * never sample its terrain or mark it explored. Wider fog keeps its own shape. */
+function naturalFogNotch(x,y,W,H,known){
+  if(x<1||y<1||x>=W-1||y>=H-1||known[y*W+x]||typeof ptMat!=='function')return false;
+  var material=ptMat(x,y);if(!material)return false;
+  for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){
+    if(!dx&&!dy)continue;
+    if(!known[(y+dy)*W+x+dx]||ptMat(x+dx,y+dy)!==material)return false;
+  }
+  return true;
+}
+function drawNaturalFogNotch(px,py){
+  var cx=px+TS*.5,cy=py+TS*.5,inner=TS*.72,outer=TS*1.08;
+  ctx.save();ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+  // The opaque radius contains every corner of the undiscovered cell. Only
+  // already-known ground in the surrounding ring is additionally darkened.
+  var fog=ctx.createRadialGradient(cx,cy,inner,cx,cy,outer);
+  fog.addColorStop(0,'rgba(0,0,0,1)');fog.addColorStop(.45,'rgba(0,0,0,.55)');fog.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=fog;ctx.fillRect(cx-outer,cy-outer,outer*2,outer*2);ctx.restore();
+}
 function drawTerrainPass(){
-  var x, y, W=MW, H=MH, M=map, V=vis, S=seen, all=revealAll, x0=camX, y0=camY, fade=memA(0.40);
+  var x, y, W=MW, H=MH, M=map, V=vis, S=seen, all=revealAll, x0=camX, y0=camY, fade=memA(0.40),fogNotches=[];
   for(y=y0;y<=y0+viewH;y++) for(x=x0;x<=x0+viewW;x++){
     if(x<0||y<0||x>=W||y>=H) continue;
     var i=y*W+x, lit=all||V[i], known=all||S[i];
-    if(!known) continue;
+    if(!known){if(spriteOn&&naturalFogNotch(x,y,W,H,S))fogNotches.push([(x-x0)*TS,(y-y0)*TS]);continue;}
     var t=M[i], px=(x-x0)*TS, py=(y-y0)*TS, a=lit?1:fade;
     if(spriteOn){
       if(isWallLike(t)) blitTile(wallTile(x,y), px, py, a);
@@ -904,6 +935,7 @@ function drawTerrainPass(){
       }
     }
   }
+  fogNotches.forEach(function(p){drawNaturalFogNotch(p[0],p[1]);});
   ctx.globalAlpha=1;
 }
 /* fallback water tint where no water tileset exists */
@@ -1008,7 +1040,7 @@ function drawGroundLayer(now, m, restX, restY){
     var g=L.g, frame=TILE_FRAME;
     L.key=null; L.epoch=G.epoch;
     g.setTransform(1,0,0,1,0,0); g.globalAlpha=1; g.globalCompositeOperation='source-over'; if('filter' in g) g.filter='none'; g.shadowColor='rgba(0,0,0,0)';
-    g.clearRect(0,0,lw,lh); g.fillStyle='#07060A'; g.fillRect(0,0,lw,lh);   /* cleared first: nothing from its last drawing is left in it */
+    g.clearRect(0,0,lw,lh); g.fillStyle='#000'; g.fillRect(0,0,lw,lh);   /* cleared first: nothing from its last drawing is left in it */
     setGroundState(g, inherit);
     g.setTransform(m.a,m.b,m.c,m.d,e[0],e[1]);
     ctx=g; TILE_FRAME={ctx:g, m:g.getTransform()}; G.building=true;
@@ -1030,24 +1062,33 @@ function drawGroundLayer(now, m, restX, restY){
   return n;
 }
 
+/* The player remains centered at world edges; reveal tools keep their bounded view. */
+function sceneCameraPoint(point){
+  if(revealAll)return {x:clamp(point.x-(viewW>>1),0,Math.max(0,MW-viewW)),y:clamp(point.y-(viewH>>1),0,Math.max(0,MH-viewH))};
+  return {x:point.x-(viewW-1)/2,y:point.y-(viewH-1)/2};
+}
+function drawMapMargins(){
+  var width=viewW*TS,height=viewH*TS,m=ctx.getTransform();
+  function edge(v,scale,offset){return (Math.round(v*scale+offset+1e-6)-offset)/scale;}
+  var left=clamp(edge(-camX*TS-camOX,m.a,m.e),0,width),top=clamp(edge(-camY*TS-camOY,m.d,m.f),0,height);
+  var right=clamp(edge((MW-camX)*TS-camOX,m.a,m.e),0,width),bottom=clamp(edge((MH-camY)*TS-camOY,m.d,m.f),0,height);
+  ctx.save();ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.shadowColor='rgba(0,0,0,0)';
+  if('filter' in ctx)ctx.filter='none';ctx.fillStyle='#000';
+  if(top>0)ctx.fillRect(0,0,width,top);if(bottom<height)ctx.fillRect(0,bottom,width,height-bottom);
+  if(left>0)ctx.fillRect(0,0,left,height);if(right<width)ctx.fillRect(right,0,width-right,height);
+  ctx.restore();
+}
+
 /* ============================================================== draw */
 function drawScene(){
   if(!map || !ground) return;
   /* the run state is read through getters (js/engine/state.js); a frame reads it once, here (2026-09-28, frame cost) */
   var x, y, now=performance.now(), W=MW, H=MH, MAP=map, VIS=vis, SEEN=seen, GRD=ground, ALL=revealAll, FIRE=fireT, fade40=memA(0.4), fade45=memA(0.45);
-  var prp=renderPos(player), touch=document.body.classList.contains('touch');
-  var camFX=clamp(prp.x-(viewW>>1), 0, Math.max(0,W-viewW));
-  var camFY=clamp(prp.y-(viewH>>1), 0, Math.max(0,H-viewH));
-  camX=Math.floor(camFX); camY=Math.floor(camFY);
-  /* 2026-09-18: on touch the player stays centred even at a map edge. The tile window stays clamped (every
-     loop below reads inside the map); only the pixel offset follows the player, so the far side of the edge
-     is empty dark and the tiles pushed past the other side are simply off-canvas. Taps convert through camOX. */
-  if(touch){ camFX=prp.x-(viewW>>1); camFY=prp.y-(viewH>>1); }
-  camOX=(camFX-camX)*TS; camOY=(camFY-camY)*TS;
-  /* where the camera rests once the hero's slide ends (the ground layer is kept for that offset) */
-  var restFX=touch ? player.x-(viewW>>1) : clamp(player.x-(viewW>>1), 0, Math.max(0,W-viewW));
-  var restFY=touch ? player.y-(viewH>>1) : clamp(player.y-(viewH>>1), 0, Math.max(0,H-viewH));
-  ctx.globalAlpha=1; ctx.fillStyle='#07060A';
+  var prp=renderPos(player), camera=sceneCameraPoint(prp), rest=sceneCameraPoint(player);
+  camX=Math.floor(camera.x);camY=Math.floor(camera.y);
+  camOX=(camera.x-camX)*TS;camOY=(camera.y-camY)*TS;
+  var restFX=rest.x,restFY=rest.y;
+  ctx.globalAlpha=1; ctx.fillStyle='#000';
   /* the layer is kept for the plain screen transform; a shaking frame, or a watched canvas, draws the ground directly */
   var screen=ctx.getTransform(), layered=GROUND_LAYER_ON && screen.b===0 && screen.c===0 && screen.e===0 && screen.f===0 && screen.a===screen.d && !groundWatched(ctx);
   if(!layered){ ctx.fillRect(0,0,viewW*TS,viewH*TS); if(GROUND_LAYER_ON) GROUND_LAYER.stats.direct++; }
@@ -1149,7 +1190,7 @@ function drawScene(){
     var o=spriteOn ? objArt('props',artName)||objArt('structures',artName)||objArt('chests',artName)||objArt('terrain',artName) : null;   /* an opened chest's art lives with the chests */
     if(p.name==='elemental-lock' && p.opened) pa*=0.6;
     if(p.name==='vines'){ drawVines(p.x, p.y, ppx, ppy, pa, now); return; }
-    if(p.pillar){ drawPillar(p, ppx, ppy, pa, now); return; }
+    if(p.pillar && !o){ drawPillar(p, ppx, ppy, pa, now); return; }
     if(typeof drawPropSurface==='function' && drawPropSurface(p, ppx, ppy, pa)) return;   /* flat bones and rubble (surface.js) */
     if(typeof propShadow==='function' && !p.flat && !/^(soul-urn|soul-brazier|kobold-campfire)$/.test(p.name)) propShadow(p.x, p.y, ppx, ppy, pa, p.name);   /* contact shadow (surface.js) */
     if(!drawObj(o, ppx, ppy, {feet:!p.flat, fit: p.flat?0.82 : (p.name==='bookshelf'||p.name==='statue'||p.name==='boss-throne')?1.12 : /^(urn|coffin|sarcophagus|tomb)/.test(p.name)?1.08 : 0.9, alpha:pa, flash:flashOf(p)})){
@@ -1257,6 +1298,7 @@ function drawScene(){
         ctx.fillRect(barX,barY,barW*clamp(e.hp/e.maxhp,0,1),3);
       }
       var ix=px0+TS*0.02;
+      if(e.merchantRoom!==undefined&&!e.foe&&e.hp>0&&(revealAll||vis[idxOf(e.x,e.y)]))mark('?',px0+TS*.39,py0-TS*.16,'#FFD24A');
       if(e.surprised && e.foe) { mark('!',px0+TS*0.78,py0+TS*0.02,'#FFD24A'); }
       if(e.state==='asleep') { mark('z',px0+TS*0.78,py0+TS*0.08+(ANIM.reduce?0:Math.sin(now/400+e.id)*2),'#CFE0FF'); }
       if(e.keyholder){ if(spriteOn)drawObj(objArt('items','item-key-iron'), px0+TS*0.52, py0-TS*0.34, {fit:0.4});else mark('k',px0+TS*.8,py0-TS*.2,'#E8B44A'); }
@@ -1304,7 +1346,7 @@ function drawScene(){
       if(!inb(tx,ty) || !(revealAll||vis[idxOf(tx,ty)])) continue;
       atTile(tx,ty,function(px,py){ ctx.fillStyle='rgba(226,98,43,.10)'; ctx.fillRect(px,py,TS,TS); });
     }
-    if(hoverX>=0){
+    if(inb(hoverX,hoverY)){
       var ok=inRange(hoverX,hoverY);
       var onFoe=ents.some(function(e){return e.foe&&!actorConcealed(e)&&entityOccupies(e,hoverX,hoverY);});
       if(A.kind==='summon' && ok && (!walkable(hoverX,hoverY) || occupied(hoverX,hoverY))) ok=false;
@@ -1324,6 +1366,8 @@ function drawScene(){
   vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.45)');
   ctx.fillStyle=vg; ctx.fillRect(0,0,viewW*TS,viewH*TS);
   drawStairsPointer(now);
+  // Lighting, particles and ground effects cannot color the empty world margins.
+  drawMapMargins();
 }
 
 /* Compact summoned elemental; all movement respects reduced-motion settings. */

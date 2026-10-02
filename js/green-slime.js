@@ -1,9 +1,9 @@
 /* Dungeon slimes reproduce from full health; green slimes also leave a trail. */
 var FoteGreenSlime=(function(){
  'use strict';
- MONSTERS.greenslime={name:'Green Slime',sprite:'m-green-slime',col:'#75a64e',ch:'s',hp:12,dmg:[1,2],acc:48,eva:0,armor:0,speed:70,range:1,xp:10,
+ MONSTERS.greenslime={name:'Green Slime',sprite:'m-green-slime',col:'#75a64e',ch:'s',hp:20,dmg:[1,2],acc:48,eva:0,armor:0,speed:70,range:1,xp:10,
   band:[1,4],biome:[0],w:12,living:true,sporeproof:true,greenSlime:true,art:.7,artLeft:true,sfx:'slime',
-  hint:'Regenerates 2 HP per turn. Damage at full HP splits it into two slimes sharing its remaining HP. Either can split again at full HP. Leaves a 10-turn poison trail.'};
+  hint:'Heals 2 HP per turn. Splits when hit at full health. Leaves a 10-turn poison trail.'};
  DROPS.greenslime={chance:.12,table:{essence:1}};
  if(MONSTERS.pebbleslime)MONSTERS.pebbleslime.w=0;
  function splittingSlime(e){return e.base&&(e.base.greenSlime||e.kind==='slime');}
@@ -43,19 +43,18 @@ var FoteGreenSlime=(function(){
   });
  }
  function draw(now){
-  if(!floorMeta.greenTrail)return;ctx.save();
-  Object.keys(floorMeta.greenTrail).forEach(function(key){
-   var i=Number(key),t=floorMeta.greenTrail[key],x=i%MW,y=Math.floor(i/MW);
-   if(x<camX-1||y<camY-1||x>camX+viewW+1||y>camY+viewH+1||!(vis[i]||t.known&&seen[i]))return;
-   var px=(x-camX)*TS,py=(y-camY)*TS,fade=Math.min(1,(t.expiresAt-worldNow())/200);
-   ctx.globalAlpha=(vis[i]?.82:memA(.4))*fade;ctx.fillStyle='#4f7939';
-   ctx.beginPath();ctx.ellipse(px+TS*.48,py+TS*.74,TS*.37,TS*.16,.16,0,Math.PI*2);ctx.fill();
-   ctx.fillStyle='#91b562';ctx.globalAlpha*=.65;
-   for(var n=0;n<4;n++){
-    var h=hash2(x,y,n+551),p=Math.max(1,Math.round(TS/40));
-    ctx.fillRect(Math.round(px+TS*(.23+h*.5)),Math.round(py+TS*(.66+hash2(x,y,n+631)*.12)),p*2,p);
+  if(!floorMeta.greenTrail)return;
+  var cells=Object.keys(floorMeta.greenTrail).map(Number).filter(function(i){return vis[i]||floorMeta.greenTrail[i].known&&seen[i];});
+  drawGroundMaterial('poison',cells,function(i){
+   // The connected pool's soft shore can extend into adjacent stone. Fade it
+   // with its neighbouring trail cells rather than cutting it at tile edges.
+   var left=0,x=i%MW,y=Math.floor(i/MW);
+   for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){
+    if(!inb(x+dx,y+dy))continue;var t=floorMeta.greenTrail[idxOf(x+dx,y+dy)];
+    if(t)left=Math.max(left,t.expiresAt-worldNow());
    }
-  });ctx.restore();
+   return Math.max(0,Math.min(1,left/200));
+  },true);
  }
  function wash(x,y){if(floorMeta.greenTrail)delete floorMeta.greenTrail[idxOf(x,y)];}
  return Object.freeze({onDamaged:onDamaged,moved:moved,pulse:pulse,draw:draw,wash:wash});

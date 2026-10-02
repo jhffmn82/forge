@@ -1,31 +1,16 @@
-# Forge of the Elements: Beta 1.4.1
+# Forge of the Elements — Beta 1.5
 
-October 1, 2026.
-
-- Fixed auto-explore wasting turns chasing unseen tiles behind sealed wall corners.
-
-- After exploration finishes, Explore becomes Next floor. Press it to travel safely to known stairs down and descend.
-
-- Sporecaller fields sprout two Shroomlings when they bloom, subject to open space and the existing Myconid summon limits.
-
-- Reworked the Ghoul's artwork and all six animations. Ghouls now have 64 HP, hit harder and move at 130% speed.
-
-- Fixed corner visibility and targeting that differed by direction. Sight, enemy perception and projectile paths now agree at diagonal corners.
-
-- Gas traps inflict 4 turns of Poison instead of 6.
-
-- Dawn Sentinels reflect 4 damage before defenses instead of half your damage. Secondary damage and damage over time do not trigger another reflection.
-
-- Shortened and corrected tooltips, ability descriptions and combat messages. Proc damage is listed separately, and direct healing shows the amount actually restored overhead.
-
-- Fixed oversized class icons on phones and improved Copy Report fallback when clipboard access is unavailable.
-
-- Mother Murk: rank 1 grants Life Drain to the player. Rank 3 shares it with summons and gives them +5% HP, movement speed, attack speed and damage per rank, scaled by Divine Power. A summon's drain heals that summon.
-
-- Murk's rank-5 Lich boon also grants +2% Divine Power per Vitality above 10. The Lich still revives once at half HP.
-
-- Bone Spear costs 5 HP instead of Favor and has no cooldown. You must have at least 1 HP left after paying.
-
-- Arcane Lance has no cooldown and still costs 5 Favor. Targeted prayers now select a reachable enemy; press again to fire, or choose a different target.
-
-- Vellum's rank-5 boon converts 100% of bonus Spell Power into additional Divine Power. It replaces the free-cast chance.
+- Rock Slime armor returns from 7 to 3, and regeneration returns from 3 to 2 HP per turn.
+- New title page with actual gameplay, clearer still portraits for every race and gender, and larger portraits with readable level, rank and floor labels.
+- Revised puzzle and special rooms, rare encounters, libraries, storage rooms and map generation. Biome artwork preserves room mechanisms and routes to rewards.
+- Area effects and hazards are clearer. Chaos boss attacks and Prism Pylons use the same pulsing red warnings as other bosses.
+- The responsive HUD puts the wrapped log opposite the control pad and above the hotbar. Menu, Map and Explore share matching circles opposite the portrait. With a vertical phone hotbar, Inventory joins that row beside eight larger ability buttons. The map overlay is smaller and centered; Options is also available in the character tabs.
+- Bosses ignore pits. Ordinary enemies that fall through a pit survive and arrive on the next floor, without granting kill rewards.
+- Skeleton base HP is 32, up from 16. Other regular Crypt and Underdark enemies have 20% more base HP; Cavern enemies have 10% more base HP in addition to the earlier Cavern adjustment. Dungeon HP, bosses, minor summons and Chaos HP are unchanged.
+- Brutes, shamans and goblin archers deal 35% more damage on floor 3 and 50% more on floors 4–5. Floors 1–2 are unchanged. Crypt damage ramps from +20% on floor 6 to +35% on floor 10.
+- Enemy accuracy rises with depth, making lightly protected characters more vulnerable while keeping armor and evasion investment useful.
+- Crypt Wraiths act at normal speed. Grave Beetle and Grave Bloat clouds last one turn longer and deal one more damage per tick. Bone Archers poison, Shades chill and Necro-Acolytes frighten on damaging attacks, subject to immunity. Myconids and their variants face their movement and casting targets correctly.
+- At +3, Ring of Warding gives +20% resistance and Ring of Wizardry gives +20% maximum Mana and +10% spell damage. Ring of Striking gives +2 weapon damage and +2% crit chance at +0, rising to +5 damage and +5% crit at +3.
+- Vellum gains piety from Mana spent on invocations. Communion is instant and uses one status icon. Its Mana cost, Ward, duration and cooldown are unchanged.
+- Arcane Lance can target breakable objects. Damaging line and area spells also break props using their normal reactions. Frozen treasure still needs Fire.
+- Shadow clone melee attacks deal shadow damage. Combat damage, healing and clone health labels show whole numbers. Menu navigation and sheet tabs no longer show hover popups.
