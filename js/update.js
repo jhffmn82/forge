@@ -3,8 +3,10 @@ var FOTE_VERSION = 'Beta 1.5';
 /* Keep newest first; describe only changes already present in this build. */
 var FOTE_PATCHES = [
   {version:'Beta 1.5', notes:[
+    "Animated portraits for all 16 race and gender combinations play two gentle idles, then a head turn and blink, independently of game turns. Taking damage triggers a brief flinch before returning to idle.",
+    "Water and poison barrels now use dedicated 128px artwork, with visible contents and distinct markings.",
     "Rock Slime armor returns from 7 to 3, and regeneration returns from 3 to 2 HP per turn.",
-    "New title page with actual gameplay, clearer still portraits for every race and gender, and larger portraits with readable level, rank and floor labels.",
+    "New title page with actual gameplay, clearer portraits for every race and gender, and larger portraits with readable level, rank and floor labels.",
     "Revised puzzle and special rooms, rare encounters, libraries, storage rooms and map generation. Biome artwork preserves room mechanisms and routes to rewards.",
     "Area effects and hazards are clearer. Chaos boss attacks and Prism Pylons use the same pulsing red warnings as other bosses.",
     "The responsive HUD puts the wrapped log opposite the control pad and above the hotbar. Menu, Map and Explore share matching circles opposite the portrait. With a vertical phone hotbar, Inventory joins that row beside eight larger ability buttons. The map overlay is smaller and centered; Options is also available in the character tabs.",

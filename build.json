@@ -1,8 +1,9 @@
 {
   "version": "Beta 1.5",
-  "built": "2026-10-02T23:09:33.685238+00:00",
-  "epoch": 1790982573,
-  "source": "3c60874c+reviewed-followup",
+  "built": "2026-10-03T04:09:36.304561+00:00",
+  "epoch": 1791000576,
+  "source": "3c60874c+reviewed-followup+approved-portrait-animation + fluid-barrel-art-ecd2abda",
   "candidate": false,
-  "releaseState": "public"
+  "releaseState": "public",
+  "revision": "portraits-fluid-barrels-20261002"
 }
