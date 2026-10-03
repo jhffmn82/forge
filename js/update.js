@@ -3,6 +3,12 @@ var FOTE_VERSION = 'Beta 1.5';
 /* Keep newest first; describe only changes already present in this build. */
 var FOTE_PATCHES = [
   {version:'Beta 1.5', notes:[
+    "Food status is always visible: Full in green, Hungry in amber and Starving in red, with a live hunger meter.",
+    "Classic UI is available again in Options under Desktop interface, with a windowed map, permanent log and room for all eight hotbar buttons. Small screens use Overlay.",
+    "The Portrait and bars size setting works again, and UI Theme is now a dropdown.",
+    "Water and poison barrel spills stay within a local 3-by-3 area. Fluid puzzle interactions are preserved.",
+    "Sleeping library guardians remain asleep until you enter their room.",
+    "Wobbles gifts and pranks now play a giggle with sparkles and a floating label. Gifts provide full healing, enhanced identified gear or more essence scaled by biome; pranks last four turns.",
     "Animated portraits for all 16 race and gender combinations play two gentle idles, then a head turn and blink, independently of game turns. Taking damage triggers a brief flinch before returning to idle.",
     "Water and poison barrels now use dedicated 128px artwork, with visible contents and distinct markings.",
     "Rock Slime armor returns from 7 to 3, and regeneration returns from 3 to 2 HP per turn.",
