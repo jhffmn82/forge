@@ -10,4 +10,4 @@ Keyboard, mouse and touch controls are supported. Phones and tablets use landsca
 
 [Devblog media](devblog/) is a permanent archive preserved across game releases.
 
-Built 2026-10-03T19:52:38.904297+00:00 from reviewed Beta 1.5 hotfix at c7ede58.
+Built 2026-10-03T20:34:23.679842+00:00 from reviewed Beta 1.5 Lance/statue follow-up at de7a164.
