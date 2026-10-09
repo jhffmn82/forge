@@ -14,11 +14,12 @@ function inventoryFailure(plan){
   log(messages[plan.error]||'That action cannot be completed.','c-info');sfx(plan.error==='full'?'inventory-full':'ui-error');return false;
 }
 function gearBagIcon(kind){return kind==='weapon'?'⚔':kind==='ring'?'○':kind==='amulet'?'☥':'⛨';}
-function addBag(icon,name,extra){
+function addBag(icon,name,extra,onFailure){
   extra=extra||{};var kind=FoteInventory.bagKind(extra.kind,extra.data),isGear=FoteInventory.gear(kind);
   var uid=extra.uid||(!isGear?name:null),existing=uid&&player.bag.find(function(b){return b.uid===uid;});
   if(existing){existing.n++;return existing;}
-  if(player.bag.length>=BAG_MAX){inventoryFailure({error:'full'});return null;}
+  // Multi-item pickup reports a shared refusal once after trying every item.
+  if(player.bag.length>=BAG_MAX){(onFailure||inventoryFailure)({error:'full'});return null;}
   var entry={icon:icon,name:name,n:1,uid:uid||'g'+nextId++,kind:kind,data:extra.data};player.bag.push(entry);return entry;
 }
 function bagEntryFor(it){
@@ -31,7 +32,7 @@ function dropBagItem(index){
   if(gameTurns.busy())return false;
   var b=player.bag[index];if(!b)return false;
   var it=FoteInventory.gear(b.kind)?{kind:b.kind,it:b.data}:b.kind==='sigil'?{kind:'sigil',use:b.data.use}:b.kind==='food'?{kind:'food',food:b.data.food}:null;
-  if(!it)return false;it.x=player.x;it.y=player.y;items.push(it);consume(index);log('You drop '+itemLabel(it)+'.','c-info');rareRoomFoodDropped(it);return true;
+  if(!it)return false;it.x=player.x;it.y=player.y;items.push(it);consume(index);log('You drop '+itemLabel(it)+'.','c-info');rareRoomFoodDropped(it);offeringGearDropped(it);return true;
 }
 function commitEquipment(plan){
   var item=plan.item;Object.assign(item,plan.normalized);
@@ -87,11 +88,16 @@ function removeEquipment(slot,spendTurn){
 function takeOffRing(slot){return removeEquipment('ring'+slot,true);}
 function takeOffAmulet(){return removeEquipment('amulet',true);}
 function unequipRanged(){return removeEquipment('ranged',false);}
-function swapWeapon(){log('Your '+(isRangedWeapon(player.ranged)?gearName(player.ranged)+' is always ready: attack anything further than a tile away and you shoot it.':'ranged weapon slot is empty. A bow there fires without swapping.'),'c-info');}
 function breakCurse(item,options){
   var change=FoteInventory.cleanse(item);if(!change)return false;Object.assign(item,change);
   if(!(options&&options.deferRefresh)){derive(player);refreshBagNames();}
   log('The curse on your <b>'+gearName(item)+'</b> breaks.','c-kill');sfx('puzzle-solved');return true;
+}
+function cleanseCarriedCurses(){
+  var gear=new Set(wornGear().concat(player.sets||[],player.offSets||[]));
+  (player.bag||[]).forEach(function(entry){if(entry.data)gear.add(entry.data);});
+  var count=0;gear.forEach(function(item){if(breakCurse(item,{deferRefresh:true}))count++;});
+  if(count){derive(player);refreshBagNames();}return count;
 }
 /* Old saves may carry the retired second main/offhand set. Preserve every
  * distinct item, even when migration temporarily exceeds bag capacity. */

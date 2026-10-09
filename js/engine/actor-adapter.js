@@ -2,7 +2,8 @@
  * FoteActors commits exactly one action cost after the selected behavior. */
 function canSeePlayer(e){
   if(player.hidden>0||e.st&&e.st.blind)return false;
-  var sight=e&&e.base&&e.base.darksight&&typeof DEEP_RAWVIS!=='undefined'&&DEEP_RAWVIS?DEEP_RAWVIS:vis;
+  var sight=e&&e.base&&e.base.darksight&&typeof DEEP_RAWVIS!=='undefined'&&DEEP_RAWVIS?DEEP_RAWVIS:
+    typeof BLIND_RAWVIS!=='undefined'&&BLIND_RAWVIS?BLIND_RAWVIS:vis;
   for(var y=e.y;y<e.y+entitySize(e);y++)for(var x=e.x;x<e.x+entitySize(e);x++)if(inb(x,y)&&sight[idxOf(x,y)]&&
     (typeof FoteEnemyTeamwork==='undefined'||FoteEnemyTeamwork.openLine({x:x,y:y},player)))return true;
   return false;
@@ -12,30 +13,30 @@ function canActorMove(e){
   if(typeof FoteChaosEnemies!=='undefined'&&FoteChaosEnemies.holdsPosition(e))return false;
   return FoteActors.movementAllowed(e,gameEffects)&&!base.still&&!base.object&&!e.parent&&e.kind!=='mawlimb';
 }
-function actorFootprintAllowed(e,x,y,options){
+function actorFootprintAllowed(e,x,y,options,context){
   options=options||{};
   var n=entitySize(e);
   for(var yy=y;yy<y+n;yy++)for(var xx=x;xx<x+n;xx++){
-    if(!inb(xx,yy)||!options.terrainOnly&&occupied(xx,yy,e))return false;
+    if(!inb(xx,yy,context)||!options.terrainOnly&&occupied(xx,yy,e))return false;
     if(typeof FoteChaosEnemies!=='undefined'&&!FoteChaosEnemies.cellAllowed(e,xx,yy))return false;
     var crucibleGate=typeof FoteUnmakerPreview!=='undefined'&&FoteUnmakerPreview.gateAt(xx,yy);
     if(crucibleGate&&!crucibleGate.open)return false;
-    var tile=at(xx,yy);
-    if(!(walkable(xx,yy)||(n===1&&options.doors&&tile===DOOR))||tile===CHASM||deepLava(xx,yy))return false;
+    var tile=at(xx,yy,context);
+    if(!(walkable(xx,yy,context)||(n===1&&options.doors&&tile===DOOR))||tile===CHASM||deepLava(xx,yy))return false;
     if(e.base.aquatic&&!eelWater(xx,yy))return false;
-    if(options.avoidFire&&fireT[idxOf(xx,yy)]>0&&e.base.el!=='fire')return false;
+    if(options.avoidFire&&(context?context.fireT:fireT)[idxOf(xx,yy,context)]>0&&e.base.el!=='fire')return false;
   }
   return true;
 }
-function actorCornerCellAllowed(e,x,y,options){
+function actorCornerCellAllowed(e,x,y,options,context){
   // Companions may round furniture on open floor, as the player does. The
   // destination still uses full collision; walls, pillars and gaps stay solid.
-  if(!e.ally)return walkable(x,y);
-  if(!inb(x,y)||at(x,y)===CHASM||deepLava(x,y))return false;
-  if(options&&options.avoidFire&&fireT[idxOf(x,y)]>0&&e.base.el!=='fire')return false;
-  if(walkable(x,y))return true;
-  var prop=typeof propAt==='function'&&propAt(x,y);
-  return !!(prop&&prop.b&&!prop.pillar&&!prop.set&&typeof terrainRules!=='undefined'&&terrainRules.walkable(at(x,y),false,floorMeta.exitOpen));
+  if(!e.ally)return walkable(x,y,context);
+  if(!inb(x,y,context)||at(x,y,context)===CHASM||deepLava(x,y))return false;
+  if(options&&options.avoidFire&&(context?context.fireT:fireT)[idxOf(x,y,context)]>0&&e.base.el!=='fire')return false;
+  if(walkable(x,y,context))return true;
+  var prop=typeof propAt==='function'&&propAt(x,y,context);
+  return !!(prop&&prop.b&&!prop.pillar&&!prop.set&&typeof terrainRules!=='undefined'&&terrainRules.walkable(at(x,y,context),false,(context?context.floorMeta:floorMeta).exitOpen));
 }
 function actorCellAllowed(e,x,y,dx,dy,options){
   if(!actorFootprintAllowed(e,x,y,options))return false;
@@ -63,49 +64,71 @@ function stepEnt(e,dx,dy){
   return false;
 }
 function actorFootprintField(e,target,options){
-  var field=new Int32Array(MW*MH).fill(-1),judged=new Int8Array(MW*MH),queue=[],n=entitySize(e),neighbors=FoteActors.neighbors;
+  var mapWidth=MW,mapHeight=MH,frame=typeof FRAME_MAP!=='undefined'&&FRAME_MAP;
+  var width=frame?FRAME_MW:mapWidth,height=frame?FRAME_MH:mapHeight;
+  var context=typeof geometryQueryContext==='function'?geometryQueryContext(width,height,frame):null;
+  var field=new Int32Array(mapWidth*mapHeight).fill(-1),judged=new Int8Array(mapWidth*mapHeight),cornerJudged=new Int8Array(mapWidth*mapHeight),queue=[],n=entitySize(e),neighbors=FoteActors.neighbors;
   options=Object.assign({terrainOnly:true,doors:true},options||{});
+  // Bounds and indices stay fixed during this synchronous search. Keep the
+  // frame view used by inb/idxOf, without reading run-state getters per edge.
+  function inside(x,y){return x>=0&&y>=0&&x<width&&y<height;}
   /* 2026-09-27 (Justin: "even non visible monsters are slowing down performance"). A search judges each cell
    * once; a wall used to be judged again by every neighbour, for every wanderer, every turn. Nothing changes
    * during one search, so the field and every step taken from it are the same. */
-  function allowed(x,y){var i=idxOf(x,y);if(!judged[i])judged[i]=actorFootprintAllowed(e,x,y,options)?1:2;return judged[i]===1;}
+  function allowed(x,y){var i=y*width+x;if(!judged[i])judged[i]=actorFootprintAllowed(e,x,y,options,context)?1:2;return judged[i]===1;}
+  // Corner clearance has a different policy from destination occupancy, but
+  // shares the same fixed actor, options and terrain during this search.
+  function cornerAllowed(x,y){var i=y*width+x;if(!cornerJudged[i])cornerJudged[i]=actorCornerCellAllowed(e,x,y,options,context)?1:2;return cornerJudged[i]===1;}
   for(var y=target.y-n;y<=target.y+entitySize(target);y++)for(var x=target.x-n;x<=target.x+entitySize(target);x++){
-    if(!inb(x,y)||dist({x:x,y:y,base:e.base},target)!==1||!allowed(x,y))continue;
+    if(!inside(x,y)||dist({x:x,y:y,base:e.base},target)!==1||!allowed(x,y))continue;
     // A diagonal behind two walls is not a reachable place beside the target.
     // Use the same corner rule as the eventual movement step.
-    if(n===1&&entitySize(target)===1&&x!==target.x&&y!==target.y&&!actorCornerCellAllowed(e,x,target.y,options)&&!actorCornerCellAllowed(e,target.x,y,options))continue;
-    field[idxOf(x,y)]=0;queue.push({x:x,y:y});
+    if(n===1&&entitySize(target)===1&&x!==target.x&&y!==target.y&&!cornerAllowed(x,target.y)&&!cornerAllowed(target.x,y))continue;
+    field[y*width+x]=0;queue.push({x:x,y:y});
   }
   for(var head=0;head<queue.length;head++){
     var p=queue[head];
     // A per-actor route only needs the gradient back to this actor. The shared
     // player field has no origin coordinates and still covers the whole floor.
     if(p.x===e.x&&p.y===e.y)break;
+    var nextDistance=field[p.y*width+p.x]+1;
     for(var k=0;k<neighbors.length;k++){
-      var dx=neighbors[k][0],dy=neighbors[k][1],nx=p.x+dx,ny=p.y+dy;
-      if(!inb(nx,ny)||field[idxOf(nx,ny)]>=0||!allowed(nx,ny))continue;
+      var dx=neighbors[k][0],dy=neighbors[k][1],nx=p.x+dx,ny=p.y+dy,index=ny*width+nx;
+      if(!inside(nx,ny)||field[index]>=0||!allowed(nx,ny))continue;
       if(dx&&dy){
-        if(n===1&&e.ally){if(!actorCornerCellAllowed(e,nx,p.y,options)&&!actorCornerCellAllowed(e,p.x,ny,options))continue;}
+        // A side cell is clearance, not a destination. Match actorCellAllowed:
+        // closed doors seal corners, while another body's side cell need not.
+        if(n===1){if(!cornerAllowed(nx,p.y)&&!cornerAllowed(p.x,ny))continue;}
         else if(!allowed(nx,p.y)&&!allowed(p.x,ny))continue;
       }
-      field[idxOf(nx,ny)]=field[idxOf(p.x,p.y)]+1;queue.push({x:nx,y:ny});
+      field[index]=nextDistance;queue.push({x:nx,y:ny});
     }
   }
   return field;
 }
+// A detour may initially lead farther from the target. Remember only its
+// rejoin distance, never a collision field: bodies and hazards can move.
+var actorRouteDetours=new WeakMap();
 function actorPathStep(e,target,field){
   if(!canActorMove(e))return false;
   field=entitySize(e)>1||e.base.aquatic?actorFootprintField(e,target):(field||actorFootprintField(e,target));
+  var routeMap=typeof FRAME_MAP!=='undefined'&&FRAME_MAP||map,size=entitySize(e),targetSize=entitySize(target);
+  var distance=field[idxOf(e.x,e.y)],detour=actorRouteDetours.get(e);
+  if(detour&&(detour.map!==routeMap||detour.targetX!==target.x||detour.targetY!==target.y||detour.targetSize!==targetSize||detour.size!==size||detour.x!==e.x||detour.y!==e.y||(distance>=0&&distance<detour.distance))){actorRouteDetours.delete(e);detour=null;}
   // Equally short routes should close toward the destination, not favor the
   // cardinal neighbors simply because they appear first in the shared list.
   function select(){return FoteActors.bestStep(e,function(x,y){return inb(x,y)?field[idxOf(x,y)]:-1;},function(x,y,dx,dy){return actorCellAllowed(e,x,y,dx,dy,{doors:true,avoidFire:true});},false,function(x,y){return (x-target.x)*(x-target.x)+(y-target.y)*(y-target.y);});}
-  var step=select();
-  if(!step&&dist(e,target)>1){
+  var step=detour?null:select();
+  if(detour||!step&&dist(e,target)>1){
     // The shared field ignores bodies. If its next step is occupied, route around
-    // the obstruction instead of repeatedly walking straight into it.
+    // the obstruction until we can rejoin it nearer the target. Switching back
+    // after the first escape step can send the actor straight back into a loop.
     field=actorFootprintField(e,target,{terrainOnly:false,doors:true,avoidFire:true});step=select();
+    if(step&&!detour){detour={map:routeMap,targetX:target.x,targetY:target.y,targetSize:targetSize,size:size,distance:distance<0?Infinity:distance};actorRouteDetours.set(e,detour);}
   }
-  return step?stepEnt(e,step.dx,step.dy):false;
+  var moved=step?stepEnt(e,step.dx,step.dy):false;
+  if(detour){if(moved){detour.x=e.x;detour.y=e.y;}else actorRouteDetours.delete(e);}
+  return moved;
 }
 function stepToward(e,x,y){
   if(!canActorMove(e))return false;
@@ -150,7 +173,6 @@ function actorPrepare(context){
   if(typeof FoteEnemyPerception!=='undefined'&&FoteEnemyPerception.libraryDormant(e))return true;
   if(e.shadowClone)e.cloneAction=null;
   if(e.pebbleSlam&&(e.state!=='hunt'||FoteActors.blocked(e,gameEffects)||e.x!==e.pebbleSlam.fromX||e.y!==e.pebbleSlam.fromY))clearPebbleSlam(e);
-  if(e.challengeT&&--e.challengeT<=0){e.challenged=false;e.cowardMark=false;}
   if(e.smokeLost&&(e.state==='hunt'||!smokeActive()))e.smokeLost=false;
   if(e.kind==='matron'){
     var matron=matronState();
@@ -172,11 +194,6 @@ function actorFinish(context){
   }
   if(e.foe&&(e.x!==context.x||e.y!==context.y)){
     if(rootG&&rootG[idxOf(e.x,e.y)]&&!gameEffects.airborne(e))applyStatus(e,'root',1);
-    if(gameEffects.has(e,'burn')&&combo('fire','air')){
-      var damage=Math.max(1,Math.round(e.st.burn.d*resistMult(e,'fire')));
-      dealDirectDamage(e,damage,'fire',e.lastHitBy||null,{tags:['periodic','movement']});floatText(e.x,e.y,String(damage),'fire');
-      if(e.hp<=0){kill(e,player);return;}
-    }
   }
   if(e.foe&&!e.base.boss&&!MAPVIEW.on){
     var see=canSeePlayer(e);
@@ -220,10 +237,10 @@ var gameActors=FoteActors.create({
     actorBehavior('local-teamwork',function(e){return typeof FoteEnemyTeamwork!=='undefined'&&!!FoteEnemyTeamwork.family(e);},function(e){return FoteEnemyTeamwork.takeTurn(e);}),
     actorBehavior('summon-retaliation',function(e){return e.foe&&!e.base.boss;},petRetaliationBehavior),
     actorBehavior('sporecaller',function(e){return !!e.base.sporecaller;},function(e){return FoteSporecaller.act(e);}),
-    actorBehavior('elemental-plane',function(e){return inFwa()&&e.base.fwa;},elementalPlaneBehavior),
+    actorBehavior('elemental-plane',function(e){return (inFwa()||e.planeEncounter)&&e.base.fwa;},elementalPlaneBehavior),
     actorBehavior('underdark',function(e){return !!e.base.deepAI;},deepCreatureBehavior),
     actorBehavior('caverns',function(e){return e.base.aquatic||e.base.spores||e.base.caveSpell||e.kind==='stormbeetle'||e.kind==='sparkjelly';},caveCreatureBehavior),
-    actorBehavior('plane-traits',function(){return !!floorMeta.plane;},planeCreatureBehavior),
+    actorBehavior('plane-traits',function(e){return !!floorMeta.plane||!!e.planeEncounter;},planeCreatureBehavior),
     actorBehavior('crypt-traits',function(e){var b=e.base;return b.reloads||b.summoner||b.phases;},function(e){return cryptCreatureBehavior(e);}),
     actorBehavior('ordinary-monster',function(e){return !!e.foe;},basicMonsterBehavior)
   ]

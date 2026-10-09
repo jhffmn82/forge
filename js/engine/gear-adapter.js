@@ -1,4 +1,6 @@
 /* Item creation and charge progression have one owner. */
+function makeEscortReward(){return rng()<.5?{kind:'ring',it:makeRing(null,false)}:{kind:'amulet',it:makeAmulet(null,false)};}
+function makeExpeditionReward(){var ring=makeRing(null,false);ring.plus=Math.max(2,ring.plus||0);return {kind:'ring',it:ring};}
 function ringPower(item){return FoteGear.ringPower(item);}
 function amuletCap(item){return FoteGear.amuletCapacity(item);}
 function amuletKillsNeeded(item){return FoteGear.amuletKills(item,AMULETS[item.amulet].kills);}
@@ -35,7 +37,7 @@ function transmutationKey(item,kind){
 }
 function transmutationKeys(item,kind){
   var key=transmutationKey(item,kind);if(!key)return [];
-  return Object.keys(transmutationCatalog(kind)).filter(function(k){return k!==key;});
+  return FoteGear.transmutationKeys(kind,key,transmutationCatalog(kind));
 }
 function transmutedGear(item,kind,key){
   var table=transmutationCatalog(kind),base=table[key];if(!base)return null;
@@ -105,7 +107,11 @@ function gearName(item){
     if(AMULETS[item.amulet])return item.name+' ('+['I','II','III'][Math.max(0,Math.min(2,(item.level||1)-1))]+')'+(item.cursed?' (cursed)':'');
     return item.name+(item.plus?' +'+item.plus:'')+(item.cursed?' (cursed)':'');
   }
-  var key=itemKey(Object.assign({},item)),prefix=key?(TIER_NAME[tierNum(item)]||''):(item.tier&&item.tier!=='Rusty'?item.tier:'');
+  var key=itemKey(Object.assign({},item)),prefix='';
+  // Transmutation retains quality on Cameras and shirts too. Their lack of
+  // scaling stats must not turn a numeric tier into an apparent item count.
+  if(key||typeof item.tier==='number'&&item.tier!==0)prefix=TIER_NAME[tierNum(item)]||'';
+  else if(typeof item.tier==='string'&&item.tier!=='Rusty')prefix=item.tier;
   var name=(prefix?prefix+' ':'')+item.name;
   if(item.unid)return name+' ?';
   if(item.plus)name+=item.plus<0?' −'+Math.abs(item.plus):' +'+item.plus;

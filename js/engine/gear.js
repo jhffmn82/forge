@@ -2,12 +2,19 @@
 (function(root){
   'use strict';
   function ringPower(item){return !item?0:item.cursed||item.plus<0?-Math.max(1,Math.abs(item.plus||0)):(item.plus||0)+1;}
+  // A normal ring cannot cancel the curse on a second worn Mending ring.
+  function cursedMending(rings){return (rings||[]).some(function(item){return item&&item.ring==='mending'&&ringPower(item)<0;});}
   function amuletCapacity(item){return Math.max(1,Math.min(3,item.level||1));}
   function amuletKills(item,base){return Math.max(2,Math.round(base*(item.cursed?1.3:1)));}
   function amuletState(item,kills){
     var level=item.level||1,charges=item.charges===undefined?1:item.charges,progress=item.charges===undefined?0:item.progress;
     charges=Math.min(charges,amuletCapacity({level:level}));
     return {level:level,charges:charges,progress:progress,charge:charges>0?0:Math.max(1,kills-(progress||0))};
+  }
+  function transmutationKeys(kind,key,catalog){
+    if(!catalog||!catalog[key])return [];
+    // Tourist keepsakes may be transformed, but are never transmutation results.
+    return Object.keys(catalog).filter(function(next){return next!==key&&!(kind==='off'&&next==='camera')&&!(kind==='armor'&&next==='shirt');});
   }
   function transmute(item,kind,key,base){
     if(!item||item.unarmed||!base||['ring','amulet','weapon','off','armor'].indexOf(kind)<0)return null;
@@ -20,6 +27,6 @@
     if(kind==='amulet')['level','charges','progress','charge','uses'].forEach(function(field){if(Object.prototype.hasOwnProperty.call(item,field))next[field]=item[field];});
     return next;
   }
-  var api=Object.freeze({ringPower:ringPower,amuletCapacity:amuletCapacity,amuletKills:amuletKills,amuletState:amuletState,transmute:transmute});
+  var api=Object.freeze({ringPower:ringPower,cursedMending:cursedMending,amuletCapacity:amuletCapacity,amuletKills:amuletKills,amuletState:amuletState,transmutationKeys:transmutationKeys,transmute:transmute});
   root.FoteGear=api;if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof globalThis==='object'?globalThis:this);
