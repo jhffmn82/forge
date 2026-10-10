@@ -30,9 +30,10 @@ function speedFxList(){
    stacks with the layout's own choice instead of replacing it. Closer = fewer, bigger tiles. */
 /* Canonical resize brings each multiplied target two tiles closer: landscape
    Far/Normal/Close/Closest target 16/12/10/8 rows; width follows the map panel. */
-var MAP_ZOOM_MUL = {far:18/12, normal:14/12, close:1, closest:10/12}, MAP_ZOOM='normal';
-try { MAP_ZOOM = localStorage.getItem('astra-temple-map-zoom') || 'normal'; } catch(e){}
-if(!MAP_ZOOM_MUL[MAP_ZOOM]) MAP_ZOOM='normal';
+var MAP_ZOOM_MUL = {far:18/12, normal:14/12, close:1, closest:10/12};
+var MAP_ZOOM_DEFAULT=uiUsesTouchInput()&&Math.min(innerWidth,innerHeight)<600?'close':'normal',MAP_ZOOM=MAP_ZOOM_DEFAULT;
+try { MAP_ZOOM = localStorage.getItem('astra-temple-map-zoom') || MAP_ZOOM_DEFAULT; } catch(e){}
+if(!Object.prototype.hasOwnProperty.call(MAP_ZOOM_MUL,MAP_ZOOM)) MAP_ZOOM=MAP_ZOOM_DEFAULT;
 
 /* Map art is a display preference shared by ordinary Options and Sandbox. */
 try{spriteOn=localStorage.getItem('astra-temple-map-art')!=='block';}catch(e){}
@@ -75,8 +76,8 @@ if($('bArt'))$('bArt').textContent=spriteOn?'Art: sprites':'Art: blocks';
 })();
 function segHTML(id, opts, cur, label){ return '<span class="seg" data-seg="'+id+'"'+(label?' role="group" aria-labelledby="'+label+'"':'')+'>'+opts.map(function(o){ var selected=String(o[0])===String(cur);return '<button type="button" data-v="'+o[0]+'" class="'+(selected?'on':'')+'" aria-pressed="'+selected+'">'+o[1]+'</button>'; }).join('')+'</span>'; }
 var UI_THEMES={ember:'Ember (Default)',forge:'Forge',vellum:'Vellum - Ivory','vellum-sand':'Vellum - Sand','vellum-ash':'Vellum - Ash',charcoal:'Charcoal',slate:'Slate',obsidian:'Obsidian',runestone:'Runestone'}, UI_TEXT_SIZES={small:'Small',normal:'Standard',large:'Large'};
-var UI_PHONE_PAD_SIZES={compact:'Compact',normal:'Normal (Default)',large:'Large'};
-var UI_STATUS_SIZES={compact:'Compact',normal:'Normal (Default)',large:'Large'},UI_STATUS_SIZE='normal';
+var UI_PHONE_PAD_SIZES={compact:'Compact',normal:'Normal',large:'Large'};
+var UI_STATUS_SIZES={compact:'Compact',normal:'Normal',large:'Large'},UI_STATUS_SIZE='normal';
 try{UI_STATUS_SIZE=localStorage.getItem('fote-ui-status-size')||UI_STATUS_SIZE;}catch(e){}
 var UI_HOTBAR_LAYOUTS={vertical:'Vertical',horizontal:'Horizontal'};
 var UI_PAD_SIDES={left:'Left',right:'Right'},UI_PAD_SIDE='left';
@@ -89,15 +90,26 @@ function uiUsesTouchInput(){
   try{var override=new URLSearchParams(location.search).get('touch');if(override==='0'||override==='1')return override==='1';}catch(e){}
   return !!((typeof MOBILE!=='undefined'&&MOBILE)||(typeof navigator!=='undefined'&&navigator.maxTouchPoints>0)||(typeof matchMedia==='function'&&matchMedia('(pointer:coarse)').matches));
 }
+// Explicit preferences win over the device default; boot never writes a choice.
+var UI_HIGH_CONTRAST=uiUsesTouchInput();
+try{var savedContrast=localStorage.getItem('fote-ui-high-contrast');if(savedContrast==='on'||savedContrast==='off')UI_HIGH_CONTRAST=savedContrast==='on';}catch(e){}
+function setHighContrast(on){
+  UI_HIGH_CONTRAST=!!on;
+  try{localStorage.setItem('fote-ui-high-contrast',UI_HIGH_CONTRAST?'on':'off');}catch(e){}
+  if(typeof drawTerrainNow==='function')drawTerrainNow();
+  if(typeof draw==='function')draw();
+}
 function uiHotbarLayout(){return UI_HOTBAR_LAYOUT;}
-var UI_HOTBAR_LAYOUT='horizontal',UI_TOUCH_PAD=true;
-try{UI_HOTBAR_LAYOUT=localStorage.getItem('fote-ui-hotbar-layout')||UI_HOTBAR_LAYOUT;UI_TOUCH_PAD=localStorage.getItem('fote-ui-touch-pad')!=='off';}catch(e){}
-var UI_THEME='ember',UI_TEXT_SIZE='normal',UI_OPACITY=100,UI_SIDE='left',UI_DESKTOP_PAD=false,UI_PHONE_PAD_SIZE='normal';
+var UI_HOTBAR_LAYOUT=uiUsesTouchInput()&&Math.min(innerWidth,innerHeight)<600?'vertical':'horizontal',UI_TOUCH_PAD=!(uiUsesTouchInput()&&Math.min(innerWidth,innerHeight)<600);
+try{UI_HOTBAR_LAYOUT=localStorage.getItem('fote-ui-hotbar-layout')||UI_HOTBAR_LAYOUT;var savedTouchPad=localStorage.getItem('fote-ui-touch-pad');if(savedTouchPad==='on'||savedTouchPad==='off')UI_TOUCH_PAD=savedTouchPad==='on';}catch(e){}
+var UI_OPACITY_DEFAULT=uiUsesTouchInput()&&Math.min(innerWidth,innerHeight)<600?0:100;
+var UI_THEME='ember',UI_TEXT_SIZE='normal',UI_OPACITY=UI_OPACITY_DEFAULT,UI_SIDE='left',UI_DESKTOP_PAD=false,UI_PHONE_PAD_SIZE='normal';
 try{UI_SIDE=localStorage.getItem('fote-ui-side')||localStorage.getItem('fote-study-pad-side')||UI_SIDE;UI_DESKTOP_PAD=(localStorage.getItem('fote-ui-desktop-pad')||localStorage.getItem('fote-study-desktop-pad'))==='shown';}catch(e){}
 if(UI_SIDE!=='left'&&UI_SIDE!=='right')UI_SIDE='left';
 if(savedPadSide==='auto')UI_PAD_SIDE=UI_SIDE==='right'?'left':'right';
-try{UI_THEME=localStorage.getItem('fote-ui-theme')||UI_THEME;UI_TEXT_SIZE=localStorage.getItem('fote-ui-text')||UI_TEXT_SIZE;UI_OPACITY=Number(localStorage.getItem('fote-ui-opacity')||100);UI_PHONE_PAD_SIZE=localStorage.getItem('fote-ui-touch-pad-size')||(localStorage.getItem('fote-ui-phone-pad-size')==='compact'?'compact':'normal');}catch(e){}
+try{UI_THEME=localStorage.getItem('fote-ui-theme')||UI_THEME;UI_TEXT_SIZE=localStorage.getItem('fote-ui-text')||UI_TEXT_SIZE;UI_OPACITY=Number(localStorage.getItem('fote-ui-opacity')||UI_OPACITY_DEFAULT);UI_PHONE_PAD_SIZE=localStorage.getItem('fote-ui-touch-pad-size')||(localStorage.getItem('fote-ui-phone-pad-size')==='compact'?'compact':'normal');}catch(e){}
 function applyUIAppearance(){
+
   if(!Object.prototype.hasOwnProperty.call(UI_THEMES,UI_THEME))UI_THEME='ember';
   if(!Object.prototype.hasOwnProperty.call(UI_TEXT_SIZES,UI_TEXT_SIZE))UI_TEXT_SIZE='normal';
   if(!Object.prototype.hasOwnProperty.call(UI_STATUS_SIZES,UI_STATUS_SIZE))UI_STATUS_SIZE='normal';
@@ -113,11 +125,16 @@ function applyUIAppearance(){
   document.body.dataset.uiStatusSize=UI_STATUS_SIZE;
   document.body.style.setProperty('--ui-status-scale',UI_STATUS_SIZE==='large'?'1.6':UI_STATUS_SIZE==='compact'?'1':'1.3');
   document.body.style.setProperty('--ui-text-scale',UI_TEXT_SIZE==='large'?'1.12':UI_TEXT_SIZE==='small'?'.9':'1');
-  UI_OPACITY=Number.isFinite(UI_OPACITY)?Math.max(10,Math.min(100,UI_OPACITY)):100;
-  document.body.classList.toggle('ui-paper-faded',UI_THEME.indexOf('vellum')===0&&UI_OPACITY<65);
-  document.body.style.setProperty('--ui-background-opacity',String(UI_OPACITY/100));
-  document.body.style.setProperty('--ui-background-percent',UI_OPACITY+'%');
+  UI_OPACITY=Number.isFinite(UI_OPACITY)?Math.max(0,Math.min(100,UI_OPACITY)):UI_OPACITY_DEFAULT;
+  document.body.classList.toggle('ui-paper-faded',false);
+  document.body.style.setProperty('--ui-background-opacity','1');
+  document.body.style.setProperty('--ui-background-percent','100%');
   applyUIPaintCompatibility();
+  var controlColor=getComputedStyle(document.body).getPropertyValue('--ui-log').trim();
+  var controlHex=/^#([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(controlColor);
+  var controlRGB=controlHex?controlHex[1]:'151210';
+  if(controlRGB.length===3)controlRGB=controlRGB.split('').map(function(c){return c+c;}).join('');
+  document.body.style.setProperty('--ui-control-background','rgba('+parseInt(controlRGB.slice(0,2),16)+','+parseInt(controlRGB.slice(2,4),16)+','+parseInt(controlRGB.slice(4,6),16)+','+(UI_OPACITY/100)+')');
   if(typeof FoteResponsiveHUD!=='undefined')FoteResponsiveHUD.relayout();
 }
 /* Older Android browsers can accept a custom property's text but reject its
@@ -132,7 +149,7 @@ function applyUIPaintCompatibility(){
     return;
   }
   if(typeof getComputedStyle!=='function')return;
-  var style=getComputedStyle(document.body),alpha=UI_OPACITY/100;
+  var style=getComputedStyle(document.body),alpha=1;
   function color(name,fallback){
     var value=style.getPropertyValue(name).trim(),match=/^#([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(value);
     var hex=match?match[1]:fallback;
@@ -151,8 +168,8 @@ applyUIAppearance();
 // Re-read the loaded palette before the first real UI appears.
 if(typeof FoteLifecycle!=='undefined')FoteLifecycle.whenReady(applyUIAppearance);
 function resetUITheme(){
-  UI_THEME='ember';UI_OPACITY=100;
-  try{localStorage.setItem('fote-ui-theme',UI_THEME);localStorage.setItem('fote-ui-opacity','100');}catch(e){}
+  UI_THEME='ember';UI_OPACITY=UI_OPACITY_DEFAULT;
+  try{localStorage.setItem('fote-ui-theme',UI_THEME);localStorage.setItem('fote-ui-opacity',String(UI_OPACITY));}catch(e){}
   applyUIAppearance();
 }
 function appearanceSegments(id,label,choices,value){
@@ -160,6 +177,12 @@ function appearanceSegments(id,label,choices,value){
 }
 function appearanceDropdown(id,label,choices,value){
   return '<label class="optrow opt-appearance"><span>'+label+'</span><select id="'+id+'">'+Object.keys(choices).map(function(k){return '<option value="'+k+'"'+(k===value?' selected':'')+'>'+choices[k]+'</option>';}).join('')+'</select></label>';
+}
+function setTouchPadVisible(on){
+  UI_TOUCH_PAD=!!on;
+  if(typeof stopDirectionPad==='function')stopDirectionPad();
+  try{localStorage.setItem('fote-ui-touch-pad',UI_TOUCH_PAD?'on':'off');}catch(e){}
+  applyUIAppearance();
 }
 var UI_APPEARANCE_CHOICES={uiHudMode:UI_HUD_MODES,uiSide:{left:'Left',right:'Right'},uiPadSide:UI_PAD_SIDES,uiHotbarLayout:UI_HOTBAR_LAYOUTS,uiPhonePadSize:UI_PHONE_PAD_SIZES,uiStatusSize:UI_STATUS_SIZES,uiTheme:UI_THEMES,uiTextSize:UI_TEXT_SIZES};
 function setAppearanceSetting(id,value){
@@ -177,44 +200,35 @@ function setAppearanceSetting(id,value){
   applyUIAppearance();return true;
 }
 function settingsHTML(){
-  var h='<div class="opt-how-to"><button type="button" id="howToPlay">How to play</button><span class="c-info">Movement, turns, items and character growth.</span></div><div class="optgrid"><div><div class="sec">Key bindings <span style="text-transform:none;letter-spacing:0">(click, then press a key; Esc cancels)</span></div><div class="binds">';
-  BIND_ACTIONS.forEach(function(b){
-    var k=bindKey(b[0]);
-    h+='<span>'+b[1]+'</span><button data-bind="'+b[0]+'" class="'+(REBINDING===b[0]?'wait':BINDS[b[0]]?'custom':'')+'">'+(REBINDING===b[0]?'press a key':keyLabel(k))+'</button>';
-  });
-  h+='</div><div style="margin-top:8px;display:flex;gap:8px;align-items:center"><button id="bindReset">Reset to defaults</button><span class="c-info" style="font-size:calc(11px + var(--ui-mobile-text-add,0px))">Arrow keys always move. Esc closes windows.</span></div></div>';
-  var lightOn = typeof lightingOn==='function' ? lightingOn() : true;
-  h+='<div><div class="sec">Audio</div>'+
-     '<div class="optrow"><span>Sound</span>'+segHTML('mute', [[0,'On'],[1,'Off']], AUDIO.muted?1:0)+'</div>'+
-     '<div class="optrow"><span>Music</span>'+segHTML('music', [[1,'On'],[0,'Off']], AUDIO.musicOn?1:0)+'</div>'+
-     '<label class="optrow"><span>Effects volume</span><input type="range" id="volSfx" min="0" max="100" value="'+Math.round((AUDIO.vol.sfx||0)*100)+'"></label>'+
-     '<label class="optrow"><span>Music volume</span><input type="range" id="volMusic" min="0" max="100" value="'+Math.round((AUDIO.vol.music||0)*100)+'"></label>'+
-     '<div class="sec">Display</div>'+
-     appearanceSegments('uiHudMode','Desktop interface',UI_HUD_MODES,UI_HUD_MODE)+'<div class="c-info">Classic UI keeps a windowed map and a permanent combat log. Smaller windows use Overlay.</div>'+
-     appearanceSegments('uiStatusSize','Portrait and bars',UI_STATUS_SIZES,UI_STATUS_SIZE)+
-     appearanceSegments('uiSide','Portrait side',{left:'Left',right:'Right'},UI_SIDE)+
-     appearanceSegments('uiPadSide','Control pad side',UI_PAD_SIDES,UI_PAD_SIDE)+
-     appearanceSegments('uiHotbarLayout','Hotbar orientation',UI_HOTBAR_LAYOUTS,UI_HOTBAR_LAYOUT)+
-     '<div class="optrow"><span id="padVisibilityLabel">Show touch pad</span>'+segHTML(uiUsesTouchInput()?'touchPad':'desktopPad',[['on','On'],['off','Off']],(uiUsesTouchInput()?UI_TOUCH_PAD:UI_DESKTOP_PAD)?'on':'off','padVisibilityLabel')+'</div>'+
-     appearanceSegments('uiPhonePadSize','Touch control size',UI_PHONE_PAD_SIZES,UI_PHONE_PAD_SIZE)+
-     appearanceDropdown('uiTheme','UI theme',UI_THEMES,UI_THEME)+
-     appearanceSegments('uiTextSize','Text size',UI_TEXT_SIZES,UI_TEXT_SIZE)+
-     '<label class="optrow ui-opacity-row"><span>UI transparency <output id="uiOpacityValue" for="uiOpacity">'+(100-UI_OPACITY)+'%</output></span><input type="range" id="uiOpacity" min="0" max="90" step="5" value="'+(100-UI_OPACITY)+'" aria-label="UI transparency" aria-describedby="uiOpacityHint"></label><div id="uiOpacityHint" class="c-info">Fades panel and button backgrounds. Text, icons and bars stay solid.</div>'+
-     '<div class="optrow"><button type="button" id="resetUITheme">Reset theme and transparency</button></div>'+
-     '<div class="optrow"><span>Map zoom</span>'+segHTML('mapzoom', [['far','Far'],['normal','Normal'],['close','Close'],['closest','Closest']], MAP_ZOOM)+'</div>'+
-     '<div class="optrow"><span>Block art</span>'+segHTML('mapart', [['block','On'],['sprite','Off']], spriteOn?'sprite':'block')+'</div>'+
-     '<div class="optrow"><span>Dynamic lighting</span>'+segHTML('light', [['on','On'],['off','Off']], lightOn?'on':'off')+'</div>'+
-     '<div class="optrow"><span>Motion (sway, flicker, bob)</span>'+segHTML('motion', [['auto','Auto'],['on','On'],['off','Off']], ANIM.mode)+'</div>'+
-     '<div class="optrow"><span>Animation speed</span>'+segHTML('speed', [[1,'1&times;'],[1.5,'1.5&times;'],[2,'2&times;'],[3,'3&times;']], ANIM_SPEED)+'</div>'+
-     '<div class="sec">Reading the map</div><div class="legend">'+
-     '<b>Dim tiles</b><span>remembered, not in sight</span><b>z over a head</b><span>asleep: surprise it</span><b>Key over a head</b><span>it carries a key</span>'+
-     '<b>Bones at a door</b><span>a monster zoo behind it</span><b>Uneven stones</b><span>a hidden door nearby ('+(uiUsesTouchInput()?'use the center search button':'search with '+keyLabel(bindKey('search')))+')</span><b>Tall grass</b><span>blocks sight, burns</span></div></div></div>';
+  var touch=uiUsesTouchInput(),phone=touch&&Math.min(innerWidth,innerHeight)<600;
+  function row(id,label,choices,value,hint){return '<div class="optrow"><span id="'+id+'Label">'+label+'</span>'+segHTML(id,choices,value,id+'Label')+'</div>'+(hint?'<div class="c-info">'+hint+'</div>':'');}
+  var bindings='<details id="uiKeyBindings" class="opt-section-details"'+(touch?'':' open')+'><summary>Keyboard controls</summary><div class="c-info">Select a binding, then press a key. Esc cancels.</div><div class="binds">';
+  BIND_ACTIONS.forEach(function(b){var k=bindKey(b[0]);bindings+='<span>'+b[1]+'</span><button data-bind="'+b[0]+'" class="'+(REBINDING===b[0]?'wait':BINDS[b[0]]?'custom':'')+'">'+(REBINDING===b[0]?'press a key':keyLabel(k))+'</button>';});
+  bindings+='</div><div class="optrow"><button id="bindReset">Reset keyboard controls</button></div><div class="c-info">Arrow keys always move. Esc closes windows.</div></details>';
+  var h='<div class="opt-how-to"><button type="button" id="howToPlay">How to play</button><span class="c-info">Movement, turns, items and character growth.</span></div><div class="optgrid">';
+  h+='<section class="opt-section"><div class="sec">Interface</div>'+row(touch?'touchPad':'desktopPad','Movement pad',[['on','On'],['off','Off']],(touch?UI_TOUCH_PAD:UI_DESKTOP_PAD)?'on':'off',phone?'With the pad off, Search stays available beside the hotbar.':'');
+  if(innerWidth>=960&&innerHeight>=600)h+=appearanceSegments('uiHudMode','Interface layout',UI_HUD_MODES,UI_HUD_MODE);
+  h+=appearanceDropdown('uiTheme','Theme',UI_THEMES,UI_THEME)+appearanceSegments('uiTextSize','Text size',UI_TEXT_SIZES,UI_TEXT_SIZE)+appearanceSegments('uiStatusSize','Status size',UI_STATUS_SIZES,UI_STATUS_SIZE)+appearanceSegments('uiSide','Status position',{left:'Left',right:'Right'},UI_SIDE)+
+    '<label class="optrow ui-opacity-row"><span>Button transparency <output id="uiOpacityValue" for="uiOpacity">'+(100-UI_OPACITY)+'%</output></span><input type="range" id="uiOpacity" min="0" max="100" step="5" value="'+(100-UI_OPACITY)+'" aria-label="Button transparency" aria-describedby="uiOpacityHint"></label><div id="uiOpacityHint" class="c-info">Fades hotbar and map action button backgrounds; panels, text and icons stay solid.</div><div class="optrow"><button type="button" id="resetUITheme">Reset theme and transparency</button></div></section>';
+  h+='<section class="opt-section"><div class="sec">Map</div>'+row('mapzoom','Map zoom',[['far','Far'],['normal','Normal'],['close','Close'],['closest','Closest']],MAP_ZOOM)+
+    row('highContrast','High contrast',[['on','On'],['off','Off']],UI_HIGH_CONTRAST?'on':'off','Brightens characters and ground items. On by default on mobile.')+
+    row('light','Lighting',[['on','On'],['off','Off']],(typeof lightingOn==='function'?lightingOn():true)?'on':'off')+
+    row('mapart','Map art',[['sprite','Sprites'],['block','Blocks']],spriteOn?'sprite':'block')+
+    row('motion','Ambient motion',[['auto','Auto'],['on','On'],['off','Off']],ANIM.mode,'Sway, flicker and bobbing. Auto follows your device motion preference.')+
+    row('speed','Animation speed',[[1,'1&times;'],[1.5,'1.5&times;'],[2,'2&times;'],[3,'3&times;']],ANIM_SPEED)+'</section>';
+  h+='<section class="opt-section"><div class="sec">Controls</div>'+appearanceSegments('uiHotbarLayout',phone?'Landscape hotbar':'Hotbar layout',UI_HOTBAR_LAYOUTS,UI_HOTBAR_LAYOUT)+(phone?'<div class="c-info">Portrait uses two rows. Landscape uses your chosen layout.</div>':'')+
+
+    appearanceSegments('uiPadSide','Pad position',UI_PAD_SIDES,UI_PAD_SIDE)+appearanceSegments('uiPhonePadSize','Pad size',UI_PHONE_PAD_SIZES,UI_PHONE_PAD_SIZE)+'</section>';
+  h+='<section class="opt-section"><div class="sec">Audio</div>'+row('mute','Sound',[[0,'On'],[1,'Off']],AUDIO.muted?1:0)+row('music','Music',[[1,'On'],[0,'Off']],AUDIO.musicOn?1:0)+
+    '<label class="optrow"><span>Effects volume</span><input type="range" id="volSfx" min="0" max="100" value="'+Math.round((AUDIO.vol.sfx||0)*100)+'"></label><label class="optrow"><span>Music volume</span><input type="range" id="volMusic" min="0" max="100" value="'+Math.round((AUDIO.vol.music||0)*100)+'"></label></section>'+bindings;
+  h+='<details id="uiMapGuide" class="opt-section-details"><summary>Reading the map</summary><div class="legend"><b>Dim tiles</b><span>remembered, not in sight</span><b>z over a head</b><span>asleep: surprise it</span><b>Key over a head</b><span>it carries a key</span><b>Bones at a door</b><span>a monster zoo behind it</span><b>Uneven stones</b><span>a hidden door nearby ('+(touch?'use Search':'search with '+keyLabel(bindKey('search')))+')</span><b>Tall grass</b><span>blocks sight, burns</span></div></details></div>';
   return h;
 }
 function optionsHTML(){return settingsHTML();}
 function refreshOptions(settingsRoot){
   var title=$('titleSettings'),isTitle=title&&typeof modalOpen!=='undefined'&&modalOpen;
   var root=settingsRoot||(isTitle?title:$('mHelp'));
+  var disclosureState=root?Array.from(root.querySelectorAll('.opt-section-details[id]')).map(function(e){return {id:e.id,open:e.open};}):[];
   var active=document.activeElement,selector='',scroller=root&&(root.closest('.bodyw')||root.parentElement),scroll=scroller?scroller.scrollTop:0;
   if(root){
     if(root.contains(active)){
@@ -226,6 +240,9 @@ function refreshOptions(settingsRoot){
   if(isTitle&&root===title){
     root.innerHTML=settingsHTML();wireSettings(root);
   }else if(typeof refreshSheet==='function')refreshSheet();
+  if(root&&root.id)root=$(root.id)||root;
+  if(root)scroller=root.closest('.bodyw')||root.parentElement;
+  disclosureState.forEach(function(e){var detail=root&&root.querySelector('#'+e.id);if(detail)detail.open=e.open;});
   var focus=root&&selector&&root.querySelector(selector);if(focus)focus.focus({preventScroll:true});
   if(scroller)scroller.scrollTop=scroll;
 }
@@ -255,7 +272,9 @@ function wireSettings(root){
       if(id==='motion'){ if(typeof setMotion==='function') setMotion(v); }
       if(id==='mapart')setMapArt(v);
       if(id==='desktopPad'){UI_DESKTOP_PAD=v==='on'||v==='shown';try{localStorage.setItem('fote-ui-desktop-pad',UI_DESKTOP_PAD?'shown':'hidden');}catch(e){}if(typeof FoteResponsiveHUD!=='undefined')FoteResponsiveHUD.relayout();}
-      if(id==='touchPad'){UI_TOUCH_PAD=v==='on';try{localStorage.setItem('fote-ui-touch-pad',v);}catch(e){}applyUIAppearance();}
+      if(id==='touchPad')setTouchPadVisible(v==='on');
+
+      if(id==='highContrast')setHighContrast(v==='on');
       if(id==='mapzoom'){ MAP_ZOOM=v; try{ localStorage.setItem('astra-temple-map-zoom', v); }catch(e){} resize(); }
       if(id==='speed'){ ANIM_SPEED=parseFloat(v)||1; try{ localStorage.setItem('astra-temple-anim-speed', String(ANIM_SPEED)); }catch(e){} applyAnimSpeed(); }
       sfx('ui-click'); refreshOptions(root);
